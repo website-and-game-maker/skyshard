@@ -26,6 +26,7 @@ const ui = createUI(document.body, {
   onRestart: () => startRun(),
   onQuit: () => toMenu(),
   onSettings: (s) => applySettings(s),
+  onSound: (name) => audio.play(name),
 });
 
 let settings = ui.getSettings();
@@ -67,6 +68,12 @@ const game = {
 for (const name of ['jump', 'doubleJump', 'dash', 'pound', 'land']) {
   player.on(name, () => audio.play(name));
 }
+player.on('spring', () => audio.play('doubleJump'));
+player.on('pound', () => {
+  follow.shake?.(0.3, 0.3);
+  input.rumble?.(0.8, 160);
+});
+player.on('dash', () => input.rumble?.(0.3, 80));
 player.on('fall', () => killPlayer());
 
 function setState(next) {
@@ -107,6 +114,7 @@ function togglePause() {
 }
 
 function applySettings(s) {
+  if (s.quality !== settings.quality) autoDrop = 0;
   settings = s;
   audio.setVolumes({ master: s.master, music: s.music, sfx: s.sfx });
   input.setOptions?.({ sensitivity: s.sensitivity, invertY: s.invertY });
@@ -121,6 +129,8 @@ function hurtPlayer(knockback) {
     killPlayer();
   } else {
     player.hurt(knockback);
+    follow.shake?.(0.2, 0.2);
+    input.rumble?.(0.6, 200);
   }
 }
 
@@ -190,18 +200,48 @@ function simulate(dt) {
   handleEnemyEvents(enemies.update(dt, player) ?? []);
 }
 
-// Resize, honouring quality setting and device pixel ratio.
+// Automatic quality: if the frame rate stays low, step down one notch at a time
+// (resolution first, then bloom, then shadows) so slow phones stay playable.
+// The player's quality setting is the ceiling; we never go above it.
+const QUALITY_STEPS = ['high', 'medium', 'low'];
+let autoDrop = 0; // notches dropped below the chosen setting
+let slowTime = 0;
+
+function effectiveQuality() {
+  const base = Math.max(0, QUALITY_STEPS.indexOf(settings.quality));
+  return QUALITY_STEPS[Math.min(QUALITY_STEPS.length - 1, base + autoDrop)];
+}
+
+function adaptQuality(dt) {
+  if (game.state !== 'playing' || document.hidden) return;
+  slowTime = game.fps < 30 ? slowTime + dt : 0;
+  if (slowTime > 3 && effectiveQuality() !== 'low') {
+    autoDrop += 1;
+    slowTime = -2; // give the new setting a moment before judging it
+    resize();
+  }
+}
+
+// Resize, honouring quality and device pixel ratio.
 function resize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  const maxRatio = settings.quality === 'low' ? 1 : settings.quality === 'medium' ? 1.5 : 2;
+  const quality = effectiveQuality();
+  const maxRatio = quality === 'low' ? 0.75 : quality === 'medium' ? 1 : 2;
   const ratio = Math.min(window.devicePixelRatio || 1, maxRatio);
   renderer.setPixelRatio(ratio);
   renderer.setSize(w, h, false);
   composer.setPixelRatio(ratio);
   composer.setSize(w, h);
-  bloom.enabled = settings.quality !== 'low';
-  renderer.shadowMap.enabled = settings.quality !== 'low';
+  bloom.enabled = quality === 'high';
+  const shadows = quality !== 'low';
+  if (renderer.shadowMap.enabled !== shadows) {
+    renderer.shadowMap.enabled = shadows;
+    // Shader programs bake in shadow support, so force a recompile.
+    scene.traverse((o) => {
+      for (const m of [].concat(o.material ?? [])) m.needsUpdate = true;
+    });
+  }
   camera.aspect = w / h;
   camera.fov = w < h ? 75 : 60; // portrait phones get a wider view
   camera.updateProjectionMatrix();
@@ -254,6 +294,7 @@ function frame() {
     fpsFrames = 0;
     ui.setFps?.(settings.showFps ? game.fps : null);
   }
+  adaptQuality(dt);
 
   publishDebug();
   composer.render();
@@ -271,6 +312,7 @@ function publishDebug() {
     health: game.health,
     deaths: game.deaths,
     fps: game.fps,
+    quality: effectiveQuality(),
   };
 }
 
