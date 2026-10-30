@@ -258,6 +258,7 @@ const clock = new THREE.Clock();
 let acc = 0;
 let fpsAcc = 0;
 let fpsFrames = 0;
+let frameCount = 0;
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -296,6 +297,7 @@ function frame() {
   }
   adaptQuality(dt);
 
+  frameCount += 1;
   publishDebug();
   composer.render();
   requestAnimationFrame(frame);
@@ -313,6 +315,8 @@ function publishDebug() {
     deaths: game.deaths,
     fps: game.fps,
     quality: effectiveQuality(),
+    timeMs: game.timeMs,
+    frame: frameCount,
   };
 }
 

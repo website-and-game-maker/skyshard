@@ -60,7 +60,7 @@ Main owns pause input (Escape / gamepad Start via `input.state.pausePressed`) an
 Test ids: `play` (start button), `hud`, `resume`.
 
 ## Debug hook (read-only, for tests)
-`window.__SKYSHARD__ = { state, player: {x, y, z, grounded}, shards, totalShards, health, deaths, fps }`, refreshed every frame.
+`window.__SKYSHARD__ = { state, player: {x, y, z, grounded}, shards, totalShards, health, deaths, fps, quality, timeMs, frame }` (`timeMs` is run time, `frame` counts rendered frames), refreshed every frame.
 `state` is one of `menu | playing | paused | won | gameover`. `quality` is the effective quality after automatic drops.
 
 ## Automatic quality
