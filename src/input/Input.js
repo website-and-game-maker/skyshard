@@ -57,14 +57,23 @@ export class Input {
       counts: { jump: 0, dash: 0, pound: 0, pause: 0, jumpRelease: 0 },
     };
     this._prev = { jump: false, dash: false, pound: false, pause: false };
+    // Presses/releases seen between two update() calls, so a quick tap on a slow frame isn't lost.
+    this._pending = { jump: false, dash: false, pound: false, pause: false };
+    this._pendingJumpRelease = false;
     this._listeners = [];
 
     this._on(win, 'keydown', (e) => {
       if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault?.();
+      if (!e.repeat) {
+        for (const k of BUTTONS) if (KEYS[k].includes(e.code)) this._pending[k] = true;
+      }
       this.keys.add(e.code);
       this.lastDevice = 'keyboard';
     });
-    this._on(win, 'keyup', (e) => this.keys.delete(e.code));
+    this._on(win, 'keyup', (e) => {
+      this.keys.delete(e.code);
+      if (KEYS.jump.includes(e.code)) this._pendingJumpRelease = true;
+    });
     this._on(win, 'blur', () => this.keys.clear());
     if (element) {
       this._on(element, 'mousedown', () => {
@@ -146,7 +155,11 @@ export class Input {
       my += t.moveY;
       lx += t.lookX;
       ly += t.lookY;
-      for (const k of BUTTONS) held[k] ||= t[k];
+      for (const k of BUTTONS) {
+        held[k] ||= t[k];
+        if (t.tapped?.[k]) this._pending[k] = true;
+      }
+      if (t.tapped?.jumpRelease) this._pendingJumpRelease = true;
     }
 
     if (!this.enabled) {
@@ -158,12 +171,16 @@ export class Input {
     s.lookX = lx;
     s.lookY = this.invertY ? -ly : ly;
     for (const k of BUTTONS) {
-      s[k + 'Pressed'] = held[k] && !this._prev[k];
+      const pending = this._pending[k] && (this.enabled || k === 'pause');
+      s[k + 'Pressed'] = (held[k] && !this._prev[k]) || pending;
       if (s[k + 'Pressed']) s.counts[k]++;
       s[k] = held[k];
+      this._pending[k] = false;
     }
-    s.jumpReleased = !held.jump && this._prev.jump;
+    // A tap that went down and up since the last update reports both edges, so the player gets a short hop.
+    s.jumpReleased = (!held.jump && (this._prev.jump || s.jumpPressed)) || (this._pendingJumpRelease && !held.jump);
     if (s.jumpReleased) s.counts.jumpRelease++;
+    this._pendingJumpRelease = false;
     this._prev = held;
     return s;
   }

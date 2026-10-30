@@ -67,6 +67,30 @@ describe('Input (keyboard)', () => {
     expect(s.counts.jumpRelease).toBe(1);
   });
 
+  it('keeps a tap that went down and up between two updates', () => {
+    input.update();
+    key('keydown', 'Escape');
+    key('keyup', 'Escape');
+    expect(input.update().pausePressed).toBe(true);
+    expect(input.update().pausePressed).toBe(false);
+    key('keydown', 'Space');
+    key('keyup', 'Space');
+    const s = input.update();
+    expect(s.jumpPressed).toBe(true);
+    expect(s.jumpReleased).toBe(true); // short hop
+    expect(s.counts.jump).toBe(1);
+    expect(s.counts.jumpRelease).toBe(1);
+    expect(input.update().jumpPressed).toBe(false);
+  });
+
+  it('ignores key auto-repeat and does not double count a held press', () => {
+    key('keydown', 'Space');
+    expect(input.update().counts.jump).toBe(1);
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', repeat: true }));
+    expect(input.update().jumpPressed).toBe(false);
+    expect(input.state.counts.jump).toBe(1);
+  });
+
   it('maps dash, pound and pause keys', () => {
     key('keydown', 'ShiftLeft');
     key('keydown', 'KeyC');
@@ -153,6 +177,17 @@ describe('Input (touch)', () => {
     expect(input.update().jumpPressed).toBe(true);
     touchEvent('touchend', jump, [{ id: 3, x: 700, y: 500 }]);
     expect(input.update().jump).toBe(false);
+  });
+
+  it('keeps a quick jump-button tap between two updates', () => {
+    input.update();
+    const jump = document.querySelector('[data-testid="touch-jump"]');
+    touchEvent('touchstart', jump, [{ id: 4, x: 700, y: 500 }]);
+    touchEvent('touchend', jump, [{ id: 4, x: 700, y: 500 }]);
+    const s = input.update();
+    expect(s.jumpPressed).toBe(true);
+    expect(s.jumpReleased).toBe(true);
+    expect(input.update().jumpPressed).toBe(false);
   });
 
   it('ignores touches and hides the overlay behind menus', () => {

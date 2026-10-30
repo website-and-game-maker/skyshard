@@ -26,6 +26,7 @@ export class TouchControls {
     this.lookDY = 0;
     this.lookSensitivity = 0.006;
     this.buttons = { jump: false, dash: false, pound: false };
+    this.tapped = { jump: false, dash: false, pound: false, jumpRelease: false };
     this.stickId = null;
     this.lookId = null;
     this._offs = [];
@@ -53,8 +54,13 @@ export class TouchControls {
       b.dataset.testid = `touch-${name}`;
       b.setAttribute('role', 'button');
       b.setAttribute('aria-label', name);
-      const down = (e) => { e.preventDefault(); this.buttons[name] = true; b.classList.add('down'); };
-      const up = (e) => { e.preventDefault(); this.buttons[name] = false; b.classList.remove('down'); };
+      const down = (e) => { e.preventDefault(); this.buttons[name] = true; this.tapped[name] = true; b.classList.add('down'); };
+      const up = (e) => {
+        e.preventDefault();
+        this.buttons[name] = false;
+        if (name === 'jump') this.tapped.jumpRelease = true;
+        b.classList.remove('down');
+      };
       this._listen(b, 'touchstart', down);
       this._listen(b, 'touchend', up);
       this._listen(b, 'touchcancel', up);
@@ -147,7 +153,9 @@ export class TouchControls {
       moveX: this.moveX, moveY: this.moveY,
       lookX: this.lookDX * this.lookSensitivity, lookY: this.lookDY * this.lookSensitivity,
       ...this.buttons,
+      tapped: { ...this.tapped },
     };
+    for (const k in this.tapped) this.tapped[k] = false;
     out.any = !!(out.moveX || out.moveY || out.lookX || out.lookY || Object.values(this.buttons).some(Boolean));
     this.lookDX = 0;
     this.lookDY = 0;
@@ -160,6 +168,7 @@ export class TouchControls {
       this.stickId = this.lookId = null;
       this._setStick(0, 0);
       for (const k in this.buttons) this.buttons[k] = false;
+      for (const k in this.tapped) this.tapped[k] = false;
       this.root.querySelectorAll('.down').forEach((el) => el.classList.remove('down'));
     }
     this.root.classList.toggle('hidden', !v);
