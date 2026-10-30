@@ -1,0 +1,24 @@
+{
+  "name": "skyshard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Skyshard: a 3D platformer that runs in the browser.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check": "npm run test && npm run build && npm run test:e2e"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "jsdom": "^25.0.1",
+    "vite": "5.4.10",
+    "vitest": "2.1.4"
+  }
+}
