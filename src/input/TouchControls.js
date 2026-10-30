@@ -7,8 +7,8 @@ const STYLE = `
 .ss-stick{position:absolute;left:calc(100px + env(safe-area-inset-left));bottom:calc(40px + env(safe-area-inset-bottom));width:120px;height:120px;margin:0 0 0 -60px;border-radius:50%;background:rgba(255,255,255,.14);border:2px solid rgba(255,255,255,.35);opacity:.55;transition:opacity .15s;pointer-events:auto;touch-action:none}
 .ss-stick.on{opacity:1}
 .ss-knob{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.55);box-shadow:0 2px 8px rgba(0,0,0,.2)}
-.ss-btn{position:absolute;pointer-events:auto;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 13px system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.5);touch-action:none}
-.ss-btn.down{transform:scale(.9);filter:brightness(1.25)}
+.ss-tbtn{position:absolute;pointer-events:auto;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 13px system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.5);touch-action:none}
+.ss-tbtn.down{transform:scale(.9);filter:brightness(1.25)}
 .ss-jump{width:84px;height:84px;right:calc(24px + env(safe-area-inset-right));bottom:calc(28px + env(safe-area-inset-bottom));background:rgba(60,200,192,.55)}
 .ss-dash{width:62px;height:62px;right:calc(120px + env(safe-area-inset-right));bottom:calc(40px + env(safe-area-inset-bottom));background:rgba(255,122,89,.55)}
 .ss-pound{width:62px;height:62px;right:calc(40px + env(safe-area-inset-right));bottom:calc(126px + env(safe-area-inset-bottom));background:rgba(140,120,255,.55)}
@@ -48,7 +48,7 @@ export class TouchControls {
     root.appendChild(this.stick);
     for (const [name, label] of [['jump', 'JUMP'], ['dash', 'DASH'], ['pound', 'POUND']]) {
       const b = doc.createElement('div');
-      b.className = `ss-btn ss-${name}`;
+      b.className = `ss-tbtn ss-${name}`;
       b.textContent = label;
       b.dataset.btn = name;
       b.dataset.testid = `touch-${name}`;
