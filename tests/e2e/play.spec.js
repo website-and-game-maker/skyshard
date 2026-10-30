@@ -9,9 +9,11 @@ test.describe('desktop controls', () => {
     await startGame(page);
     await page.waitForTimeout(500); // let the player settle on the ground
     const before = (await snapshot(page)).player;
-    await holdKey(page, 'w', 800);
-    const after = (await snapshot(page)).player;
-    expect(dist(before, after)).toBeGreaterThan(0.5);
+    // CI renders in software at a few fps and the game caps simulated time per
+    // frame, so hold the key until the player has moved rather than for a set time.
+    await page.keyboard.down('w');
+    await expect.poll(async () => dist(before, (await snapshot(page)).player), { timeout: 20_000 }).toBeGreaterThan(0.5);
+    await page.keyboard.up('w');
     expect(errors).toEqual([]);
   });
 
@@ -20,13 +22,9 @@ test.describe('desktop controls', () => {
     await page.waitForTimeout(500);
     const groundY = (await snapshot(page)).player.y;
     await page.keyboard.down('Space');
-    let peak = groundY;
-    for (let i = 0; i < 10; i++) {
-      await page.waitForTimeout(50);
-      peak = Math.max(peak, (await snapshot(page)).player.y);
-    }
+    // Poll rather than sample a fixed window, so a slow software renderer still sees the arc.
+    await expect.poll(async () => (await snapshot(page)).player.y - groundY, { timeout: 20_000, intervals: [30] }).toBeGreaterThan(0.3);
     await page.keyboard.up('Space');
-    expect(peak - groundY).toBeGreaterThan(0.3);
   });
 
   test('player stays in a sane place during play', async ({ page }) => {

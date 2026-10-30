@@ -1,5 +1,6 @@
 // Shared helpers. The game exposes a read-only snapshot on window.__SKYSHARD__
-// ({ state, player: {x,y,z}, shards, totalShards, fps }) that tests poll.
+// ({ state, player: {x,y,z,grounded}, shards, totalShards, health, deaths, fps,
+// timeMs, frame, quality }) that tests poll.
 
 export const snapshot = (page) =>
   page.evaluate(() => {
@@ -33,6 +34,8 @@ export async function startGame(page) {
   await openMenu(page);
   await page.getByTestId('play').click();
   await waitForState(page, 'playing');
+  // Wait for the simulation to actually advance; shader compiles can stall the first frames.
+  await page.waitForFunction(() => window.__SKYSHARD__?.timeMs > 0, null, { timeout: 30_000 });
 }
 
 // Holds a key for a while; works for keyboard-driven movement on desktop.

@@ -29,11 +29,12 @@ test.describe('touch devices', () => {
     const touch = (type, ty) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y: ty, id: 1 }] });
     await touch('touchStart', y);
     for (let i = 1; i <= 5; i++) await touch('touchMove', y - i * 10);
-    await page.waitForTimeout(800);
+    const moved = async () => {
+      const p = (await snapshot(page)).player;
+      return Math.hypot(p.x - before.x, p.z - before.z);
+    };
+    await expect.poll(moved, { timeout: 20_000 }).toBeGreaterThan(0.5);
     await touch('touchEnd', y - 50);
-
-    const after = (await snapshot(page)).player;
-    expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeGreaterThan(0.5);
   });
 
   test('a jump button is reachable', async ({ page }) => {
