@@ -64,4 +64,4 @@ Test ids: `play` (start button), `hud`, `resume`.
 `state` is one of `menu | playing | paused | won | gameover`. `quality` is the effective quality after automatic drops.
 
 ## Automatic quality
-If the frame rate stays under 30 fps for 3 seconds of play, main drops one notch (high → medium → low): resolution first, then bloom, then shadows. The quality setting is the ceiling.
+If the frame rate stays under 30 fps for 3 seconds of play, main drops one notch (high → medium → low): resolution first, then bloom, then shadow map updates (re-rendered every 10th frame instead of every frame). The quality setting is the ceiling.
