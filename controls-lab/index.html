@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b1440" />
+    <title>Skyshard Controls Lab</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1440; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #f4efe6; touch-action: none; }
+      #stage { position: fixed; inset: 0; }
+      #game { width: 100%; height: 100%; display: block; outline: none; }
+      #panel { position: fixed; z-index: 30; top: 12px; left: 12px; width: 320px; max-height: calc(100% - 24px); overflow: auto; box-sizing: border-box;
+        background: rgba(27, 20, 64, 0.88); border: 1px solid rgba(255,255,255,.15); border-radius: 16px; padding: 14px 16px; backdrop-filter: blur(6px); }
+      #panel.collapsed > :not(header) { display: none; }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      h1 { font-size: 17px; margin: 0; letter-spacing: .02em; }
+      h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #9fe9e4; margin: 14px 0 6px; }
+      p.note { font-size: 12.5px; line-height: 1.45; color: #d9d2ff; margin: 8px 0 0; }
+      .schemes { display: grid; gap: 6px; }
+      .scheme { text-align: left; border: 2px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: inherit; border-radius: 12px; padding: 8px 10px; cursor: pointer; font: inherit; }
+      .scheme b { display: block; font-size: 14px; }
+      .scheme span { display: block; font-size: 12px; color: #cfc8f5; margin-top: 2px; line-height: 1.35; }
+      .scheme.on { border-color: #3cc8c0; background: rgba(60,200,192,.18); }
+      .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; margin: 8px 0; font-size: 13px; }
+      .row input { grid-column: 1 / -1; width: 100%; accent-color: #3cc8c0; }
+      .row output { color: #ffb347; font-variant-numeric: tabular-nums; }
+      .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+      button.act { font: 600 13px system-ui, sans-serif; border: 0; border-radius: 10px; padding: 9px 12px; cursor: pointer; background: #3cc8c0; color: #10233a; }
+      button.act.alt { background: rgba(255,255,255,.12); color: #f4efe6; }
+      #toggle { background: rgba(255,255,255,.12); color: #f4efe6; border: 0; border-radius: 8px; padding: 6px 10px; font: 600 12px system-ui; cursor: pointer; }
+      #keys { font-size: 12px; line-height: 1.6; color: #e9e4ff; }
+      kbd { background: rgba(255,255,255,.14); border-radius: 5px; padding: 0 5px; font: 600 11px ui-monospace, monospace; }
+      #copied { font-size: 12px; color: #9fe9e4; min-height: 16px; margin-top: 6px; }
+      #hud { position: fixed; right: 14px; top: 14px; z-index: 25; font-size: 13px; background: rgba(27,20,64,.7); padding: 8px 12px; border-radius: 10px; }
+      @media (max-width: 700px) {
+        #panel { width: auto; right: 12px; top: auto; bottom: 12px; max-height: 55%; }
+        #panel.collapsed { left: auto; width: auto; top: 12px; bottom: auto; }
+        #hud { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><canvas id="game" tabindex="0" aria-label="Controls lab"></canvas></div>
+    <aside id="panel">
+      <header><h1>Controls Lab</h1><button id="toggle" type="button">Hide</button></header>
+      <p class="note">Try each style on the real first island. Pick the one that feels best, tweak the sliders, then press <b>Copy my choice</b> and send it to Claude.</p>
+      <h2>Keyboard style</h2>
+      <div class="schemes" id="schemes"></div>
+      <h2>Feel</h2>
+      <div id="sliders"></div>
+      <h2>Keys</h2>
+      <div id="keys"></div>
+      <div class="buttons">
+        <button class="act" id="copy" type="button">Copy my choice</button>
+        <button class="act alt" id="reset" type="button">Back to start</button>
+        <button class="act alt" id="defaults" type="button">Reset sliders</button>
+      </div>
+      <div id="copied" aria-live="polite"></div>
+      <p class="note">On a phone or gamepad, the stick always moves relative to the camera; these styles change the keyboard.</p>
+      <p class="note"><a href="../" style="color:#9fe9e4">Play the full game</a></p>
+    </aside>
+    <div id="hud"></div>
+    <script type="module" src="./lab.js"></script>
+  </body>
+</html>
