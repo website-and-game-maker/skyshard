@@ -65,3 +65,11 @@ Test ids: `play` (start button), `hud`, `resume`.
 
 ## Automatic quality
 If the frame rate stays under 30 fps for 3 seconds of play, main drops one notch (high → medium → low): resolution first, then bloom, then shadow map updates (re-rendered every 10th frame instead of every frame). The quality setting is the ceiling.
+
+## Feedback (`src/feedback/`)
+One inbox for everything: the Unblock Games arcade's `feedback` collection (Firebase project `arcade-library`).
+- Inside the arcade (same-origin frame), `createHostBridge` says hello to the parent; once the arcade answers `host`, the game's Feedback buttons open the arcade's own report dialog (`postMessage` `{ arcade: 1, type: 'feedback', info }`). The arcade's bar button sends `info?` and `pause` the other way, and `feedback-closed { sent }` when its dialog closes.
+- On Skyshard's own page, the UI's `feedback` screen sends through `createSender` (Firestore REST, `source: 'game'`), with an outbox in `localStorage['skyshard.feedback.outbox']` that retries on load and when back online.
+- `buildGameInfo` is the game details a report may carry; the player sees the exact text and can leave it out. Problem reports only.
+- UI handlers: `onFeedback(from)`, `onFeedbackSubmit({ kind, message, includeInfo })`; method `showFeedback({ info, from })`. Test ids: `feedback` (title), `pause-feedback`, `feedback-text`, `feedback-send`, `feedback-back`.
+- Input ignores keys typed into text boxes and keys a menu already handled (`defaultPrevented`).

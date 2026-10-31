@@ -136,6 +136,49 @@ describe('createUI screens', () => {
     expect(h.onQuit).toHaveBeenCalledOnce();
   });
 
+  it('offers feedback from the title and the pause menu', () => {
+    const onFeedback = vi.fn();
+    const { ui } = setup({ onFeedback });
+    ui.showTitle();
+    q('feedback').click();
+    ui.showPause();
+    q('pause-feedback').click();
+    expect(onFeedback.mock.calls).toEqual([['title'], ['pause']]);
+  });
+
+  it('sends feedback from its own form and returns where it came from', async () => {
+    const onFeedbackSubmit = vi.fn(async () => 'sent');
+    const { ui } = setup({ onFeedbackSubmit });
+    ui.showFeedback({ info: 'Shards: 3 of 54', from: 'pause' });
+    expect(visible('feedback')).toBe(true);
+    expect(document.activeElement).toBe(q('feedback-text'));
+    expect(q('feedback-info-text').textContent).toBe('Shards: 3 of 54');
+    q('feedback-text').value = 'The bridge wobbles';
+    q('feedback-send').click();
+    await vi.waitFor(() => expect(q('feedback-done').textContent).toMatch(/sent/));
+    expect(onFeedbackSubmit).toHaveBeenCalledWith({ kind: 'problem', message: 'The bridge wobbles', includeInfo: true });
+    q('feedback-back').click();
+    expect(visible('pause')).toBe(true);
+  });
+
+  it('hides game details for ideas and shows form errors', async () => {
+    const onFeedbackSubmit = vi.fn(async () => ({ error: 'Write a few words first.' }));
+    const { ui } = setup({ onFeedbackSubmit });
+    ui.showFeedback({ from: 'title' });
+    q('feedback-kind-idea').click();
+    expect(q('feedback-info').closest('[hidden]')).not.toBeNull();
+    q('feedback-send').click();
+    await vi.waitFor(() => expect(q('feedback-status').textContent).toBe('Write a few words first.'));
+    expect(onFeedbackSubmit.mock.calls[0][0].kind).toBe('idea');
+  });
+
+  it('lets Escape in the message box go back without typing into the game', () => {
+    const { ui } = setup();
+    ui.showFeedback({ from: 'title' });
+    q('feedback-text').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(visible('title')).toBe(true);
+  });
+
   it('edits, saves and reports settings, then returns where it came from', () => {
     const { ui, h, storage } = setup();
     ui.showPause();

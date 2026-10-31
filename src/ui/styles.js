@@ -21,6 +21,7 @@ export const UI_CSS = `
   -webkit-tap-highlight-color: transparent;
 }
 .ss-ui *, .ss-ui *::before, .ss-ui *::after { box-sizing: border-box; }
+.ss-ui [hidden] { display: none !important; }
 
 .ss-screen {
   position: absolute;
@@ -77,7 +78,7 @@ export const UI_CSS = `
   color: transparent;
   filter: drop-shadow(0 4px 18px rgba(255, 179, 138, 0.35));
 }
-.ss-tagline { margin: 0; color: var(--ss-dim); font-size: 16px; letter-spacing: 0.02em; }
+.ss-tagline { margin: 0; color: #e6eaff; font-size: 16px; letter-spacing: 0.02em; text-shadow: 0 1px 2px rgba(6, 8, 28, 0.9), 0 0 14px rgba(6, 8, 28, 0.75); }
 .ss-h2 { margin: 0 0 18px; font-size: 28px; font-weight: 800; letter-spacing: 0.03em; }
 .ss-sub { margin: -8px 0 20px; color: var(--ss-dim); }
 
@@ -112,7 +113,51 @@ export const UI_CSS = `
 }
 /* No focus ring for mouse and touch players; keyboard and gamepad keep it. */
 .ss-ui.ss-pointer .ss-btn:focus-visible, .ss-ui.ss-pointer .ss-tab:focus-visible { outline: none; }
-.ss-foot { margin-top: 18px; font-size: 14px; color: var(--ss-dim); min-height: 1.2em; }
+.ss-foot { margin: 0; font-size: 14px; color: var(--ss-dim); min-height: 1.2em; }
+/* The title sits on the bright 3D scene, so its quieter controls get their own backing. */
+.ss-plain .ss-btn:not(.ss-primary) {
+  background: rgba(14, 18, 50, 0.55); border-color: rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.ss-plain .ss-btn:not(.ss-primary):hover { background: rgba(14, 18, 50, 0.72); }
+.ss-plain .ss-foot { text-shadow: 0 1px 2px rgba(6, 8, 28, 0.9); color: #e6eaff; }
+.ss-foot-row { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; min-height: 36px; }
+.ss-foot-row .ss-foot:empty { display: none; }
+.ss-link {
+  appearance: none; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(14, 18, 50, 0.55);
+  color: var(--ss-ink); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  min-height: 36px; padding: 6px 16px; border-radius: 999px; touch-action: manipulation;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.ss-link:hover { background: rgba(14, 18, 50, 0.75); }
+.ss-link:focus-visible { outline: 3px solid var(--ss-focus); outline-offset: 2px; }
+.ss-ui.ss-pointer .ss-link:focus-visible { outline: none; }
+
+/* Feedback form */
+.ss-fb { text-align: left; margin-bottom: 16px; }
+.ss-fb .ss-tabs { flex-wrap: wrap; margin-bottom: 14px; }
+.ss-fb-label { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; margin-bottom: 6px; }
+.ss-count { font-size: 12px; font-weight: 600; color: var(--ss-dim); font-variant-numeric: tabular-nums; }
+.ss-textarea {
+  display: block; width: 100%; min-height: 104px; resize: vertical; padding: 10px 12px; border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08); color: var(--ss-ink); border: 1px solid rgba(255, 255, 255, 0.2);
+  font: inherit; font-size: 16px; line-height: 1.4; -webkit-user-select: text; user-select: text;
+}
+.ss-textarea::placeholder { color: var(--ss-dim); opacity: 0.8; }
+.ss-textarea:focus-visible { outline: 3px solid var(--ss-focus); outline-offset: 2px; }
+.ss-info-row { margin-top: 12px; font-size: 14px; }
+.ss-check { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
+.ss-check input { width: 22px; height: 22px; accent-color: var(--ss-accent); }
+.ss-details { margin-top: 6px; color: var(--ss-dim); }
+.ss-details summary { cursor: pointer; padding: 4px 0; }
+.ss-details summary:focus-visible { outline: 3px solid var(--ss-focus); outline-offset: 2px; }
+.ss-info {
+  margin: 6px 0 0; padding: 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.25); max-height: 140px; overflow: auto;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, monospace; white-space: pre-wrap; color: var(--ss-ink);
+  -webkit-user-select: text; user-select: text;
+}
+.ss-status { min-height: 1.3em; margin: 10px 0 0; font-size: 14px; color: var(--ss-accent-2); }
+.ss-fb-done { margin: 6px 0 22px; font-size: 18px; font-weight: 700; color: var(--ss-accent); }
 
 .ss-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 22px; }
 .ss-stat { padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); }
@@ -212,7 +257,31 @@ export const UI_CSS = `
   .ss-heart { width: 24px; height: 22px; }
   .ss-logo { margin-bottom: 16px; }
 }
+/* Short windows, like a Chromebook or the arcade's frame: keep the whole title in view. */
+@media (max-height: 720px) and (min-height: 481px) {
+  .ss-gem { width: 40px; height: 40px; }
+  .ss-title { font-size: clamp(40px, 9vh, 64px); }
+  .ss-logo { gap: 6px; margin-bottom: 16px; }
+  .ss-menu { gap: 10px; }
+  .ss-btn { min-height: 46px; padding: 9px 18px; }
+  .ss-card { margin-top: 14px; padding: 8px 12px 2px; }
+  .ss-controls th, .ss-controls td { padding: 4px 6px; }
+  .ss-foot-row { margin-top: 10px; }
+}
+@media (max-height: 600px) and (min-height: 481px) {
+  .ss-gem { display: none; }
+  .ss-tab { min-height: 32px; padding: 4px 12px; }
+}
+@media (max-height: 560px) and (min-height: 481px) {
+  .ss-tagline { display: none; }
+  .ss-logo { margin-bottom: 10px; }
+  .ss-controls th, .ss-controls td { padding: 3px 6px; }
+  .ss-info { max-height: 90px; }
+}
 @media (max-height: 480px) and (orientation: landscape) {
+  .ss-info { max-height: 70px; }
+  .ss-foot-row { margin-top: 6px; min-height: 0; }
+  .ss-textarea { min-height: 64px; }
   .ss-gem, .ss-tagline { display: none; }
   .ss-title { font-size: 36px; }
   .ss-logo { margin-bottom: 10px; }
