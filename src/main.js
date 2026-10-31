@@ -201,7 +201,7 @@ function simulate(dt) {
 }
 
 // Automatic quality: if the frame rate stays low, step down one notch at a time
-// (resolution first, then bloom, then shadows) so slow phones stay playable.
+// (resolution first, then bloom, then shadow updates) so slow phones stay playable.
 // The player's quality setting is the ceiling; we never go above it.
 const QUALITY_STEPS = ['high', 'medium', 'low'];
 let autoDrop = 0; // notches dropped below the chosen setting
@@ -234,14 +234,11 @@ function resize() {
   composer.setPixelRatio(ratio);
   composer.setSize(w, h);
   bloom.enabled = quality === 'high';
-  const shadows = quality !== 'low';
-  if (renderer.shadowMap.enabled !== shadows) {
-    renderer.shadowMap.enabled = shadows;
-    // Shader programs bake in shadow support, so force a recompile.
-    scene.traverse((o) => {
-      for (const m of [].concat(o.material ?? [])) m.needsUpdate = true;
-    });
-  }
+  // On low, re-render the shadow map a few times a second instead of turning shadows off:
+  // toggling shadowMap.enabled forces every shader to recompile, a multi-second stall on slow GPUs.
+  // The shadow camera only moves when the map re-renders, so stale shadows stay in the right place.
+  renderer.shadowMap.autoUpdate = quality !== 'low';
+  renderer.shadowMap.needsUpdate = true;
   camera.aspect = w / h;
   camera.fov = w < h ? 75 : 60; // portrait phones get a wider view
   camera.updateProjectionMatrix();
@@ -300,6 +297,7 @@ function frame() {
   adaptQuality(realDt);
 
   frameCount += 1;
+  if (!renderer.shadowMap.autoUpdate && frameCount % 10 === 0) renderer.shadowMap.needsUpdate = true;
   publishDebug();
   composer.render();
   requestAnimationFrame(frame);
