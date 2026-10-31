@@ -453,7 +453,7 @@ export function buildLava(size, timeUniform) {
         vec2 p = vUv * 6.0;
         float n = sin(p.x * 1.7 + uTime * 0.8) * sin(p.y * 1.3 - uTime * 0.6) + sin((p.x + p.y) * 2.1 + uTime);
         vec3 col = mix(vec3(1.0, 0.25, 0.05), vec3(1.0, 0.85, 0.3), smoothstep(0.2, 1.6, n));
-        gl_FragColor = vec4(col * 1.6, 1.0);
+        gl_FragColor = vec4(col * vec3(1.05, 0.8, 0.7), 1.0);
         #include <colorspace_fragment>
       }`,
   });

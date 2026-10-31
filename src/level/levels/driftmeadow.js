@@ -136,4 +136,10 @@ export default {
   env: 'meadow',
   islands, movers, crumblers, bouncers, hazards, spawn, checkpoints, beacon, shards,
   shardsRequired: SHARDS_REQUIRED, enemySpawns, hearts, killY: KILL_Y,
+  parMs: 150000,
+  sunstones: [
+    onIsland('ledge', 0, 0, 1.1), // the end of the crumbling stairs
+    [19.5, 9, -61], // a double jump above the bonus islet
+    [-19.5, 24.5, -80], // straight up from the spring mushroom
+  ],
 };

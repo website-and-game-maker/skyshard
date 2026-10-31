@@ -77,6 +77,8 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
   // ----- Title -----
   const bestLine = h('p', { class: 'ss-foot', testid: 'best' });
   const controlsCard = buildControlsCard();
+  const playButton = button('Play', { primary: true, testid: 'play', onclick: () => call('onStart') });
+  const progressLine = h('p', { class: 'ss-foot ss-progress', testid: 'progress' });
   makeScreen(
     'title',
     h(
@@ -92,9 +94,11 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
       h(
         'div',
         { class: 'ss-menu' },
-        button('Play', { primary: true, testid: 'play', onclick: () => call('onStart') }),
+        playButton,
+        button('World map', { testid: 'worldmap', onclick: () => call('onWorldMap') }),
         button('Settings', { testid: 'settings', onclick: () => openSettings('title') }),
       ),
+      progressLine,
       controlsCard.el,
       bestLine,
     ),
@@ -204,6 +208,7 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
         { class: 'ss-menu' },
         button('Resume', { primary: true, testid: 'resume', onclick: () => call('onResume') }),
         button('Restart', { testid: 'restart', onclick: () => call('onRestart') }),
+        button('World map', { testid: 'pause-map', onclick: () => call('onWorldMap') }),
         button('Settings', { testid: 'pause-settings', onclick: () => openSettings('pause') }),
         button('Quit to title', { testid: 'quit', onclick: () => call('onQuit') }),
       ),
@@ -212,22 +217,14 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
 
   // ----- Win / lose -----
   const winBody = h('div');
-  makeScreen(
-    'win',
-    h(
-      'div',
-      { class: 'ss-panel' },
-      h('h2', { class: 'ss-h2' }, 'Beacon awakened!'),
-      h('p', { class: 'ss-sub' }, 'The sky remembers its light.'),
-      winBody,
-      h(
-        'div',
-        { class: 'ss-menu' },
-        button('Play again', { primary: true, testid: 'play-again', onclick: () => call('onRestart') }),
-        button('Title screen', { testid: 'win-quit', onclick: () => call('onQuit') }),
-      ),
-    ),
-  );
+  const winTitle = h('h2', { class: 'ss-h2' }, 'Beacon awakened!');
+  const winSub = h('p', { class: 'ss-sub' }, 'The sky remembers its light.');
+  const winMenu = h('div', { class: 'ss-menu' });
+  const nextBtn = button('Next level', { primary: true, testid: 'next-level', onclick: () => call('onNext') });
+  const againBtn = button('Play again', { primary: true, testid: 'play-again', onclick: () => call('onRestart') });
+  const mapBtn = button('World map', { testid: 'win-map', onclick: () => call('onWorldMap') });
+  const winQuit = button('Title screen', { testid: 'win-quit', onclick: () => call('onQuit') });
+  makeScreen('win', h('div', { class: 'ss-panel' }, winTitle, winSub, winBody, winMenu));
   const loseBody = h('div');
   makeScreen(
     'lose',
@@ -395,9 +392,20 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
     get screen() {
       return screen;
     },
-    showTitle(best = readBest(storage)) {
+    showTitle(best = readBest(storage), { playLabel = 'Play', progress = '' } = {}) {
       bestLine.textContent = Number.isFinite(best) && best > 0 ? `Best time ${formatTime(best)}` : '';
+      playButton.textContent = playLabel;
+      progressLine.textContent = progress;
       show('title');
+    },
+    // Extra screens built elsewhere (the world map) plug into the same navigation.
+    addScreen(name, el) {
+      if (screens[name]) return screens[name];
+      const section = makeScreen(name, el);
+      return section;
+    },
+    showScreen(name) {
+      show(name);
     },
     showHud() {
       show(null);
@@ -429,9 +437,15 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
       for (const el of Object.values(screens)) el.classList.remove('ss-active');
       hud.classList.remove('ss-active');
     },
-    showWin({ timeMs = 0, shards = 0, totalShards = 0, best = null, deaths = 0 } = {}) {
+    showWin({ timeMs = 0, shards = 0, totalShards = 0, best = null, deaths = 0, title, subtitle, extra = null, hasNext = false, campaign = false } = {}) {
       const isRecord = Number.isFinite(best) && Math.abs(best - timeMs) < 1;
+      winTitle.textContent = title ?? 'Beacon awakened!';
+      winSub.textContent = subtitle ?? 'The sky remembers its light.';
+      // In the campaign the results lead onward; the classic one-level flow keeps "Play again" first.
+      againBtn.classList.toggle('ss-primary', !hasNext);
+      winMenu.replaceChildren(...(campaign ? [hasNext ? nextBtn : null, againBtn, mapBtn].filter(Boolean) : [againBtn, winQuit]));
       winBody.replaceChildren(
+        extra ?? '',
         isRecord ? h('div', { class: 'ss-record', testid: 'record' }, 'New best time!') : '',
         h(
           'div',
