@@ -1,5 +1,6 @@
 // Level registry. LEVELS is play order; WORLDS groups them for the world map.
 // The tutorial (when present) sits first and belongs to no world.
+import tutorial from './tutorial.js';
 import driftmeadow from './driftmeadow.js';
 import windward from './windward.js';
 import bramblebrute from './bramblebrute.js';
@@ -19,7 +20,7 @@ export const WORLDS = [
     levels: ['moonlit-drift', 'aurora-spires', 'gloamking'] },
 ];
 
-export const LEVELS = [driftmeadow, windward, bramblebrute, cinderSteps, kilnSpire, cinderhorn, moonlitDrift, auroraSpires, gloamking];
+export const LEVELS = [tutorial, driftmeadow, windward, bramblebrute, cinderSteps, kilnSpire, cinderhorn, moonlitDrift, auroraSpires, gloamking];
 
 export const levelById = Object.fromEntries(LEVELS.map((l) => [l.id, l]));
 export const worldById = Object.fromEntries(WORLDS.map((w) => [w.id, w]));
