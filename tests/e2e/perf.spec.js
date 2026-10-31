@@ -43,13 +43,25 @@ test('reaches the menu quickly', async ({ page }) => {
 test('holds a playable frame rate', async ({ page }) => {
   await startGame(page);
   const software = await isSoftwareGL(page);
-  const minFps = Number(process.env.SKYSHARD_MIN_FPS || (software ? 1 : 30));
   await page.waitForTimeout(1000); // skip shader warm-up
   const { fps, worst, frames } = await sampleFrames(page, 4000);
   console.log(`${software ? 'software' : 'GPU'} GL: avg ${fps.toFixed(1)} fps over ${frames} frames, worst ${worst.toFixed(0)} ms`);
-  expect(fps).toBeGreaterThan(minFps);
-  // A multi-second hitch means a freeze (runaway loop, sync shader compile storm).
-  expect(worst).toBeLessThan(software ? 5000 : 500);
+  if (software && !process.env.SKYSHARD_MIN_FPS) {
+    // Software GL speed says nothing about real devices; just prove the loop is alive.
+    expect(frames).toBeGreaterThanOrEqual(2);
+    expect(worst).toBeLessThan(5000);
+  } else {
+    expect(fps).toBeGreaterThan(Number(process.env.SKYSHARD_MIN_FPS || 30));
+    // A long hitch means a freeze (runaway loop, sync shader compile storm).
+    expect(worst).toBeLessThan(500);
+  }
+});
+
+test('drops to a lighter quality tier when the frame rate is low', async ({ page }) => {
+  await startGame(page);
+  test.skip(!(await isSoftwareGL(page)), 'only software GL is reliably slow enough');
+  // Software GL runs far under 30 fps, so automatic quality should step down to low.
+  await expect.poll(() => page.evaluate(() => window.__SKYSHARD__.quality), { timeout: 30_000 }).toBe('low');
 });
 
 test('memory does not climb while playing', async ({ page, browserName }) => {
