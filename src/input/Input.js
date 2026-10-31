@@ -84,7 +84,9 @@ export class Input {
     });
     this._on(win, 'blur', () => this.keys.clear());
     if (element) {
-      this._on(element, 'mousedown', () => {
+      this._on(element, 'mousedown', (e) => {
+        // Clicking an on-screen control (the HUD pause button) must not grab the mouse instead.
+        if (e?.target?.closest?.('button, a, input, select, textarea, summary, label')) return;
         if (this.enabled && this.playing && this.lastDevice !== 'touch') {
           try { element.requestPointerLock?.()?.catch?.(() => {}); } catch { /* not allowed here */ }
         }

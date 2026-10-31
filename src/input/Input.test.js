@@ -54,6 +54,18 @@ describe('Input (keyboard)', () => {
     expect(s.jumpPressed).toBe(false);
   });
 
+  it('grabs the mouse from the world but not from an on-screen button', () => {
+    let grabs = 0;
+    document.body.requestPointerLock = () => { grabs++; };
+    input.setTouchVisible(true);
+    const btn = document.createElement('button');
+    document.body.append(btn);
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(grabs).toBe(0);
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(grabs).toBe(1);
+  });
+
   it('maps WASD and arrows to movement with +Y forward', () => {
     key('keydown', 'KeyW');
     key('keydown', 'KeyD');
