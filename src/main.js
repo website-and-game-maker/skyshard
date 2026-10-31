@@ -10,20 +10,27 @@ import { Input } from './input/index.js';
 import { Player } from './player/index.js';
 import { FollowCamera } from './camera/index.js';
 import { createLevel } from './level/index.js';
+import { LEVELS, WORLDS, levelById, nextLevelId } from './level/levels/index.js';
 import { createEnemies } from './enemies/index.js';
 import { createUI } from './ui/index.js';
 import { createAudio } from './audio/index.js';
+import { createWorldMap } from './ui/worldmap.js';
+import { createProgress, SKINS } from './progress/index.js';
+import { applySkin } from './progress/skins.js';
 
 const STEP = 1 / 60; // fixed simulation step
 const MAX_HEALTH = 3;
 
 const canvas = document.getElementById('game');
 const audio = createAudio();
+const progress = createProgress({ levels: LEVELS });
 const ui = createUI(document.body, {
-  onStart: () => startRun(),
+  onStart: () => startRun(progress.nextUp()),
   onPause: () => togglePause(),
   onResume: () => setState('playing'),
-  onRestart: () => startRun(),
+  onRestart: () => startRun(currentDef.id),
+  onNext: () => startRun(nextLevelId(currentDef.id) ?? currentDef.id),
+  onWorldMap: () => openWorldMap(),
   onQuit: () => toMenu(),
   onSettings: (s) => applySettings(s),
   onSound: (name) => audio.play(name),
@@ -48,12 +55,57 @@ const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.6, 0.85);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
-// Game modules
-const level = createLevel({ scene, quality: settings.quality === 'low' ? 'low' : 'high' });
+// Game modules. The level and its enemies are swapped by loadLevel(); everything else lives for the session.
+const levelQuality = () => (settings.quality === 'low' ? 'low' : 'high');
+let currentDef = levelById[progress.nextUp()] ?? levelById.driftmeadow ?? LEVELS[0];
+let level = createLevel({ scene, quality: levelQuality(), layout: currentDef });
 const player = new Player({ scene, world: level });
-const enemies = createEnemies({ scene, level });
+let enemies = createEnemies({ scene, level });
 const input = new Input({ element: document.body, window });
 const follow = new FollowCamera(camera, { collidables: level.colliders });
+applySkin(player.model, progress.skin);
+
+const worldMap = createWorldMap(ui, {
+  worlds: WORLDS,
+  levelById,
+  progress,
+  skins: SKINS,
+  onPlay: (id) => startRun(id),
+  onBack: () => setState('menu'),
+  onSkin: (id) => {
+    if (progress.setSkin(id)) applySkin(player.model, progress.skin);
+  },
+  onSound: (name) => audio.play(name),
+});
+
+function openWorldMap() {
+  if (game.state === 'playing' || game.state === 'paused' || game.state === 'won') {
+    game.state = 'menu';
+    input.setTouchVisible(false);
+    audio.startMusic('title');
+  } else if (game.state !== 'menu') {
+    setState('menu');
+  }
+  worldMap.show(currentDef.world);
+}
+
+// Build a level from its definition (src/level/levels/), replacing the current one.
+function loadLevel(def) {
+  if (!def) return;
+  enemies.dispose();
+  level.dispose();
+  currentDef = def;
+  level = createLevel({ scene, quality: levelQuality(), layout: def });
+  enemies = createEnemies({ scene, level });
+  player.world = level;
+  player.controller.world = level;
+  follow.collidables = level.colliders;
+  player.setCheckpoint(level.spawn);
+  player.respawn(level.spawn);
+  follow.snap?.(player.position);
+  renderer.toneMappingExposure = level.env?.exposure ?? 1.05;
+  renderer.shadowMap.needsUpdate = true;
+}
 
 // Game state
 const game = {
@@ -85,15 +137,21 @@ function setState(next) {
   } else if (next === 'paused') {
     ui.showPause();
   } else if (next === 'menu') {
-    ui.showTitle();
+    const started = progress.completedCount > 0;
+    ui.showTitle(null, {
+      playLabel: started ? 'Continue' : 'Play',
+      progress: started ? `☀ ${progress.totalSunstones} / ${progress.maxSunstones} sunstones · ${progress.completedCount} levels cleared` : '',
+    });
     audio.startMusic('title');
   }
 }
 
-function startRun() {
+function startRun(id) {
   audio.unlock();
+  if (id && levelById[id] && id !== currentDef.id) loadLevel(levelById[id]);
   level.reset();
   enemies.reset();
+  level.setSunstonesOwned?.(progress.record(currentDef.id)?.sunstones ?? []);
   player.setCheckpoint(level.spawn);
   player.respawn(level.spawn);
   follow.snap?.(player.position);
@@ -147,18 +205,50 @@ function winRun() {
   setState('won');
   audio.play('win');
   audio.stopMusic();
-  const bestKey = 'skyshard.best';
-  let best = null;
-  try {
-    best = Number(localStorage.getItem(bestKey)) || null;
-    if (!best || game.timeMs < best) {
-      localStorage.setItem(bestKey, String(Math.round(game.timeMs)));
-      best = game.timeMs;
-    }
-  } catch {
-    best = game.timeMs;
+  const def = currentDef;
+  const result = progress.complete(def.id, {
+    timeMs: game.timeMs,
+    shards: level.shardsCollected,
+    totalShards: level.shardsTotal,
+    sunstones: level.sunstonesTaken ?? [],
+    deaths: game.deaths,
+  });
+  const next = nextLevelId(def.id);
+  const nextDef = next ? levelById[next] : null;
+  const chips = [];
+  const found = progress.sunstonesFound(def.id);
+  if (def.sunstones?.length) chips.push(`☀ ${found} / ${def.sunstones.length} sunstones`);
+  if (def.parMs) chips.push(game.timeMs <= def.parMs ? 'Under par time!' : `Par ${formatPar(def.parMs)}`);
+  for (const skin of result.newSkins) chips.push(`New scarf: ${skin.name}`);
+  if (result.firstClear && nextDef && nextDef.world !== def.world) {
+    const w = WORLDS.find((x) => x.id === nextDef.world);
+    if (w) chips.push(`${w.name} unlocked!`);
   }
-  ui.showWin({ timeMs: game.timeMs, shards: level.shardsCollected, totalShards: level.shardsTotal, best, deaths: game.deaths });
+  const extra = document.createElement('div');
+  extra.className = 'ss-results';
+  for (const text of chips) {
+    const span = document.createElement('span');
+    span.textContent = text;
+    extra.append(span);
+  }
+  const finale = !nextDef;
+  ui.showWin({
+    timeMs: game.timeMs,
+    shards: level.shardsCollected,
+    totalShards: level.shardsTotal,
+    best: progress.record(def.id)?.bestMs ?? game.timeMs,
+    deaths: game.deaths,
+    title: finale ? 'The sky is whole again!' : def.boss ? `${def.boss.name} defeated!` : 'Beacon awakened!',
+    subtitle: finale ? 'Pip has gathered every world back into the light. Thank you for playing!' : `${def.name} cleared.`,
+    extra,
+    hasNext: !!nextDef,
+    campaign: true,
+  });
+}
+
+function formatPar(ms) {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function handleLevelEvents(events) {
@@ -174,6 +264,14 @@ function handleLevelEvents(events) {
     } else if (e.type === 'heart') {
       game.health = Math.min(MAX_HEALTH, game.health + 1);
       audio.play('shard');
+    } else if (e.type === 'sunstone') {
+      audio.play('checkpoint');
+      progress.keepSunstone(currentDef.id, e.index);
+      ui.toast(`Sunstone ${e.collected} of ${e.total}!`);
+    } else if (e.type === 'tip') {
+      ui.toast(e.text);
+    } else if (e.type === 'hurt') {
+      hurtPlayer(e.knockback);
     } else if (e.type === 'goal') {
       winRun();
     }
@@ -189,6 +287,19 @@ function handleEnemyEvents(events) {
       audio.play('enemyDefeat');
     } else if (e.type === 'hurt') {
       hurtPlayer(e.knockback);
+    } else if (e.type === 'bossStart') {
+      ui.toast(`${e.name} awakens!`);
+      follow.shake?.(0.4, 0.5);
+    } else if (e.type === 'bossSlam') {
+      follow.shake?.(0.35, 0.3);
+      input.rumble?.(0.7, 180);
+    } else if (e.type === 'bossHit') {
+      ui.toast(`Hit! ${e.hp} to go`);
+      follow.shake?.(0.3, 0.3);
+    } else if (e.type === 'bossDefeated') {
+      ui.toast(`${e.name} is defeated! The beacon rises.`);
+      audio.play('checkpoint');
+      level.openGoal();
     }
   }
 }
@@ -313,6 +424,9 @@ function publishDebug() {
     totalShards: level.shardsTotal,
     health: game.health,
     deaths: game.deaths,
+    level: currentDef.id,
+    sunstones: level.sunstonesCollected,
+    boss: enemies.boss ? { hp: enemies.boss.hp, mode: enemies.boss.mode, alive: enemies.boss.alive } : null,
     fps: game.fps,
     quality: effectiveQuality(),
     timeMs: game.timeMs,

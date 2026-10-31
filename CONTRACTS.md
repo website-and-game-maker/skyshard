@@ -44,9 +44,22 @@ The level also exposes `enemySpawns` (read by enemies) and `beaconPosition`.
 `{type:'beaconLocked', needed}`, `{type:'goal'}`. It is called with `player = null` and `dt = 0` behind menus.
 The level adds its own sky, fog and lights. Main sets ACES tone mapping, shadows and bloom.
 
+### Level definitions (`src/level/levels/`)
+Each level is a plain data file that default-exports one object; `levels/index.js` lists them in play order (`LEVELS`), groups them into `WORLDS` for the world map, and exports `levelById`, `worldById`, `nextLevelId(id)`.
+`createLevel({ scene, quality, layout })` builds any definition (default: Driftmeadow). `main.loadLevel(def)` swaps level + enemies and repoints `player.world`, `player.controller.world` and `follow.collidables`.
+Keys (arrays default to `[]`): `id, name, subtitle, world, env ('meadow'|'ember'|'starfall'), parMs, islands, movers, crumblers, bouncers, hazards ({top,size,style?:'lava'}), spawn, checkpoints, beacon, shards, shardsRequired, sunstones ([x,y,z] x3), hearts, enemySpawns, killY, tips`,
+plus `updrafts ({id, at, radius, height, lift})`, `blinkers ({id, top, size, period, on, phase})`, `sweepers ({id, center, length, arms, speed, height})` and `boss ({type:'bramble'|'cinder'|'gloam', name, island, hp})`.
+`route` is test-only: `levels/autopilot.js` plays it with Pip's real physics in `levels.test.js`, so every level with a route is proven finishable.
+Extra level events: `{type:'sunstone', index, collected, total}`, `{type:'tip', id, text, title, action}`, `{type:'hurt', knockback}` (sweepers). Boss arenas keep the beacon sunk until main calls `level.openGoal()`.
+`level.update` pushes `player.velocity.y` up inside updrafts, so it must be given the real player (main does).
+
+## Progress (`src/progress/`)
+`createProgress({ levels })`: save in localStorage `skyshard.save.v1` (levels done, best time/shards, sunstones, skin). Levels unlock in order; scarves (`SKINS`) unlock by total sunstones. `applySkin(player.model, skin)` recolours Pip.
+
 ## Enemies (`src/enemies/index.js`)
 `createEnemies({ scene, level })` returns `{ update(dt, player), reset(), dispose() }`.
-`update` returns `{type:'stomp', position}`, `{type:'hurt', knockback}`, `{type:'defeated', kind, position}`.
+`update` returns `{type:'stomp', position}`, `{type:'hurt', knockback}`, `{type:'defeated', kind, position}`,
+and for bosses `{type:'bossStart', name}`, `{type:'bossSlam', position}`, `{type:'bossHit', hp}`, `{type:'bossDefeated', name}`. Kinds: mossback, gloomwisp, puffcap, spikeling (only a ground pound beats it), emberbat, boss.
 Main handles health: `hurt` is ignored while `player.invulnerable`.
 
 ## Audio (`src/audio/index.js`)
@@ -57,10 +70,11 @@ Names: jump, doubleJump, dash, land, pound, shard, hurt, enemyDefeat, checkpoint
 `createUI(root, { onStart, onPause, onResume, onRestart, onQuit, onSettings, onSound })` returns
 `{ getSettings(), showTitle(), showHud(), updateHud({shards, totalShards, health, maxHealth, timeMs}), showPause(), hide(), showWin({timeMs, shards, totalShards, best, deaths}), showLose(), toast(text), setFps(n | null) }`.
 Main owns pause input (Escape / gamepad Start via `input.state.pausePressed`) and saves the best time under `skyshard.best`.
-Test ids: `play` (start button), `hud`, `resume`.
+Test ids: `play` (start button; "Continue" once you've cleared a level, it always starts a level), `worldmap`, `hud`, `resume`, `pause-map`, `next-level`, and on the map `world-<id>`, `level-<id>`, `skin-<id>`, `map-back`.
+Extra handlers: `onNext`, `onWorldMap`. `ui.addScreen(name, el)` / `ui.showScreen(name)` plug extra screens into menu navigation.
 
 ## Debug hook (read-only, for tests)
-`window.__SKYSHARD__ = { state, player: {x, y, z, grounded}, shards, totalShards, health, deaths, fps, quality, timeMs, frame }` (`timeMs` is run time, `frame` counts rendered frames), refreshed every frame.
+`window.__SKYSHARD__ = { state, player: {x, y, z, grounded}, shards, totalShards, health, deaths, level, sunstones, boss, fps, quality, timeMs, frame }` (`timeMs` is run time, `frame` counts rendered frames), refreshed every frame.
 `state` is one of `menu | playing | paused | won | gameover`. `quality` is the effective quality after automatic drops.
 
 ## Automatic quality

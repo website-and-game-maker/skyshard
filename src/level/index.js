@@ -1,29 +1,59 @@
 import * as THREE from 'three';
-import {
-  islands, islandById, movers, crumblers, bouncers, hazards, spawn, checkpoints, beacon as beaconDef,
-  shards as shardList, hearts as heartList, enemySpawns, SHARDS_REQUIRED, KILL_Y,
-} from './layout.js';
+import driftmeadow from './levels/driftmeadow.js';
 import { islandColliders, boxCollider } from './colliders.js';
-import { moverAt, isStandingOn, createCrumbleState, stepCrumble, touchesPickup, inZone } from './mechanics.js';
-import { FOG_COLOR, createSky, createLights, createClouds, createMotes } from './sky.js';
+import {
+  moverAt, isStandingOn, createCrumbleState, stepCrumble, touchesPickup, inZone,
+  blinkerAt, sweeperAngle, sweeperHits, inUpdraft, updraftLift,
+} from './mechanics.js';
+import { createSky, createLights, createClouds, createMotes } from './sky.js';
+import { resolveEnv } from './env.js';
 import {
   buildIslandGeometry, islandMaterial, createVegetation, buildTree, buildRock, buildWaterfall, createDistantIslands,
 } from './islands.js';
 import {
   shardGeometry, shardMaterial, buildHeart, buildMover, buildCrumbler, buildCheckpoint, setCheckpointActive,
   buildBeacon, setBeaconUnlocked, buildMushroom, MUSHROOM_TOP, buildThorns, createSparkles,
+  buildUpdraft, buildBlinker, buildSweeper, buildSunstone, setSunstoneOwned, buildLava,
 } from './props.js';
+
+export { LEVELS, WORLDS, levelById, worldById, nextLevelId } from './levels/index.js';
 
 const CHECKPOINT_RADIUS = 2.4;
 const GOAL_RADIUS = 2.4;
 const RESPAWN_OFFSET = new THREE.Vector3(0, 0, -1.8); // in front of the totem, clear of its collider
 
-const islandTop = (id, dx = 0, dz = 0) => {
-  const i = islandById[id];
-  return new THREE.Vector3(i.x + dx, i.y, i.z + dz);
-};
+const SWEEPER_KNOCK = 8;
 
-export function createLevel({ scene, quality = 'high' } = {}) {
+// `layout` is a level definition from levels/ (see levels/README in CONTRACTS.md).
+// Missing arrays default to empty, so a level only lists what it uses.
+export function createLevel({ scene, quality = 'high', layout = driftmeadow } = {}) {
+  const def = layout;
+  const islands = def.islands ?? [];
+  const islandById = Object.fromEntries(islands.map((i) => [i.id, i]));
+  const movers = def.movers ?? [];
+  const crumblers = def.crumblers ?? [];
+  const bouncers = def.bouncers ?? [];
+  const hazards = def.hazards ?? [];
+  const checkpoints = def.checkpoints ?? [];
+  const beaconDef = def.beacon;
+  const shardList = def.shards ?? [];
+  const heartList = def.hearts ?? [];
+  const enemySpawns = def.enemySpawns ?? [];
+  const tips = def.tips ?? [];
+  const updrafts = def.updrafts ?? [];
+  const blinkers = def.blinkers ?? [];
+  const sweepers = def.sweepers ?? [];
+  const sunstoneList = def.sunstones ?? [];
+  const spawn = def.spawn ?? { x: 0, y: 0, z: 0 };
+  const env = resolveEnv(def.env);
+  const hasBoss = !!def.boss;
+
+  const islandTop = (id, dx = 0, dz = 0) => {
+    const i = islandById[id];
+    if (!i) throw new Error(`Level ${def.id}: unknown island "${id}"`);
+    return new THREE.Vector3(i.x + dx, i.y, i.z + dz);
+  };
+
   const root = new THREE.Group();
   root.name = 'level';
   scene.add(root);
@@ -32,18 +62,18 @@ export function createLevel({ scene, quality = 'high' } = {}) {
   const colliders = [];
 
   // Atmosphere
-  const sky = createSky(root);
-  scene.fog = new THREE.Fog(FOG_COLOR, 90, 420);
+  const sky = createSky(root, env);
+  scene.fog = new THREE.Fog(env.fog.color, env.fog.near, env.fog.far);
   scene.background = scene.fog.color.clone();
   sky.dome.onBeforeRender = (_r, _s, camera) => {
     sky.dome.position.copy(camera.position);
     sky.dome.updateMatrixWorld();
   };
-  const lights = createLights(root, quality);
-  const clouds = createClouds(root, quality);
-  const motes = createMotes(root, quality);
+  const lights = createLights(root, quality, env);
+  const clouds = createClouds(root, quality, env);
+  const motes = createMotes(root, quality, env);
   const distant = new THREE.Group();
-  createDistantIslands(distant, quality);
+  createDistantIslands(distant, quality, env.distantThemes);
   root.add(distant);
 
   // Islands, trees, rocks and waterfalls
@@ -59,7 +89,7 @@ export function createLevel({ scene, quality = 'high' } = {}) {
     root.add(mesh);
     colliders.push(...islandColliders(isl));
 
-    if (isl.theme === 'crystal') {
+    if (isl.theme === 'crystal' || isl.theme === 'starlit') {
       // Crystals hanging under crystal islands.
       for (let k = 0; k < 5; k++) {
         const a = (k / 5) * Math.PI * 2 + isl.x;
@@ -152,12 +182,40 @@ export function createLevel({ scene, quality = 'high' } = {}) {
   });
 
   // Thorn patches
-  for (const [k, def] of hazards.entries()) {
-    const mesh = buildThorns(def.size, 70 + k);
-    mesh.position.set(def.top[0], def.top[1] - def.size[1], def.top[2]);
+  for (const [k, hz] of hazards.entries()) {
+    const mesh = hz.style === 'lava' ? buildLava(hz.size, time) : buildThorns(hz.size, 70 + k);
+    mesh.position.set(hz.top[0], hz.top[1] - hz.size[1], hz.top[2]);
     root.add(mesh);
-    colliders.push(boxCollider([def.top[0], def.top[1] - def.size[1] / 2, def.top[2]], def.size, { hazard: true }));
+    colliders.push(boxCollider([hz.top[0], hz.top[1] - hz.size[1] / 2, hz.top[2]], hz.size, { hazard: true }));
   }
+
+  // Updrafts: columns of rising wind (no collider; the level nudges Pip's vertical speed).
+  const updraftParts = updrafts.map((u) => {
+    const mesh = buildUpdraft(u, time);
+    mesh.position.set(...u.at);
+    root.add(mesh);
+    return { def: u, mesh };
+  });
+
+  // Phase slabs: solid for part of each cycle, flicker as a warning, then vanish.
+  const blinkerParts = blinkers.map((b) => {
+    const mesh = buildBlinker(b);
+    mesh.position.set(...b.top);
+    root.add(mesh);
+    const [w, h, d] = b.size;
+    const collider = boxCollider([b.top[0], b.top[1] - h / 2, b.top[2]], [w, h, d]);
+    colliders.push(collider);
+    return { def: b, mesh, collider, solid: true };
+  });
+
+  // Sweepers: spinning spiked arms. Contact is checked here and reported as a 'hurt' event.
+  const sweeperParts = sweepers.map((sw) => {
+    const mesh = buildSweeper(sw);
+    mesh.position.set(...sw.center);
+    root.add(mesh);
+    colliders.push(boxCollider([sw.center[0], sw.center[1] + (sw.height ?? 1.2) / 2, sw.center[2]], [0.9, sw.height ?? 1.2, 0.9]));
+    return { def: sw, mesh };
+  });
 
   // Checkpoints
   const checkpointParts = checkpoints.map((def, k) => {
@@ -174,11 +232,27 @@ export function createLevel({ scene, quality = 'high' } = {}) {
   const beaconMesh = buildBeacon(time);
   beaconMesh.position.copy(beaconPos);
   root.add(beaconMesh);
-  colliders.push(boxCollider([beaconPos.x, beaconPos.y + 2.3, beaconPos.z], [1.2, 4.6, 1.2]));
+  const beaconColliders = [boxCollider([beaconPos.x, beaconPos.y + 2.3, beaconPos.z], [1.2, 4.6, 1.2])];
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-    colliders.push(boxCollider([beaconPos.x + Math.cos(a) * 3, beaconPos.y + 1.1, beaconPos.z + Math.sin(a) * 3], [0.6, 2.2, 0.6]));
+    beaconColliders.push(boxCollider([beaconPos.x + Math.cos(a) * 3, beaconPos.y + 1.1, beaconPos.z + Math.sin(a) * 3], [0.6, 2.2, 0.6]));
   }
+  // In boss arenas the beacon stays sunk out of sight until the boss falls (openGoal()).
+  let goalOpen = !hasBoss;
+  let beaconRise = goalOpen ? 1 : 0;
+  const setBeaconPresent = (present) => {
+    beaconMesh.visible = present;
+    for (const c of beaconColliders) setColliderPresent(c, present);
+  };
+
+  // Sunstones: three hidden gems per level, saved across runs.
+  const sunstoneParts = sunstoneList.map((pos, i) => {
+    const mesh = buildSunstone();
+    mesh.position.set(pos[0], pos[1], pos[2]);
+    root.add(mesh);
+    return { pos, mesh, index: i };
+  });
+  const sunstoneTaken = new Array(sunstoneList.length).fill(false);
 
   // Shards (one instanced mesh) and hearts
   const shardMesh = new THREE.InstancedMesh(shardGeometry(), shardMaterial(), shardList.length);
@@ -194,6 +268,7 @@ export function createLevel({ scene, quality = 'high' } = {}) {
     return m;
   });
   const sparkles = createSparkles(root);
+  const tipInside = new Array(tips.length).fill(false);
 
   // Run state
   const shardTaken = new Array(shardList.length).fill(false);
@@ -210,24 +285,54 @@ export function createLevel({ scene, quality = 'high' } = {}) {
   const level = {
     root,
     colliders,
-    killY: KILL_Y,
+    def,
+    env,
+    id: def.id,
+    name: def.name,
+    killY: def.killY ?? -25,
     spawn: new THREE.Vector3(spawn.x, spawn.y, spawn.z),
     respawnPoint: new THREE.Vector3(spawn.x, spawn.y, spawn.z),
     shardsTotal: shardList.length,
     shardsCollected: 0,
-    shardsRequired: Math.min(SHARDS_REQUIRED, shardList.length),
+    shardsRequired: hasBoss ? 0 : Math.min(def.shardsRequired ?? shardList.length, shardList.length),
+    sunstonesTotal: sunstoneList.length,
+    get sunstonesCollected() {
+      return sunstoneTaken.filter(Boolean).length;
+    },
+    sunstonesTaken: sunstoneTaken,
+    get goalOpen() {
+      return goalOpen;
+    },
     beaconPosition: beaconPos.clone(),
     // World-space enemy placements, read by createEnemies (modules don't import each other).
-    enemySpawns: enemySpawns.map((s, i) => {
+    enemySpawns: [...enemySpawns, ...(hasBoss ? [{ ...def.boss, kind: 'boss' }] : [])].map((s, i) => {
       const isl = islandById[s.island];
+      if (!isl) throw new Error(`Level ${def.id}: enemy on unknown island "${s.island}"`);
       const at = (dx, dz, dy = 0) => new THREE.Vector3(isl.x + dx, isl.y + dy, isl.z + dz);
-      if (s.kind === 'mossback') {
+      if (s.kind === 'mossback' || s.kind === 'spikeling') {
         return { kind: s.kind, home: at(0, 0), a: at(...s.a), b: at(...s.b), leash: s.leash };
       }
-      return { kind: s.kind, home: at(s.at[0], s.at[1], s.hover ?? 0), phase: i * 1.3 };
+      if (s.kind === 'boss') {
+        return { kind: 'boss', type: s.type, name: s.name, home: at(0, 0), arenaRadius: s.arenaRadius ?? isl.radius * 0.8, hp: s.hp ?? 3 };
+      }
+      return { kind: s.kind, home: at(s.at[0], s.at[1], s.hover ?? 0), phase: i * 1.3, orbit: s.orbit ?? 0 };
     }),
     get beaconUnlocked() {
-      return level.shardsCollected >= level.shardsRequired;
+      return goalOpen && level.shardsCollected >= level.shardsRequired;
+    },
+
+    // Boss arenas: main calls this when the boss is defeated; the beacon rises.
+    openGoal() {
+      if (goalOpen) return;
+      goalOpen = true;
+      setBeaconPresent(true);
+      setBeaconUnlocked(beaconMesh, true);
+      sparkles.emit(beaconPos);
+    },
+
+    // Sunstones already in the save show as faint outlines; taking one again still counts for the run.
+    setSunstonesOwned(owned = []) {
+      sunstoneParts.forEach((s, i) => setSunstoneOwned(s.mesh, !!owned[i]));
     },
 
     update(dt = 0, player = null, elapsed) {
@@ -244,6 +349,21 @@ export function createLevel({ scene, quality = 'high' } = {}) {
       time.value = visualTime;
 
       placeMovers(simTime, dt);
+
+      for (const b of blinkerParts) {
+        const st = blinkerAt(b.def, simTime);
+        if (st.solid !== b.solid) {
+          b.solid = st.solid;
+          setColliderPresent(b.collider, st.solid);
+        }
+        const flicker = st.warn ? (Math.sin(visualTime * 40) > 0 ? 0.35 : 0.9) : 0.9;
+        b.mesh.visible = st.solid;
+        b.mesh.userData.mat.opacity = flicker;
+        b.mesh.userData.edgeMat.opacity = st.warn ? flicker : 0.8;
+      }
+      for (const sw of sweeperParts) {
+        sw.mesh.userData.rotor.rotation.y = sweeperAngle(sw.def, simTime);
+      }
 
       for (const c of crumbleParts) {
         const onTop = !!player && player.grounded !== false && isStandingOn(player, c.collider.box);
@@ -264,6 +384,36 @@ export function createLevel({ scene, quality = 'high' } = {}) {
           events.push({ type: 'shard', collected: level.shardsCollected, total: level.shardsTotal });
           if (level.shardsCollected === level.shardsRequired) setBeaconUnlocked(beaconMesh, true);
         });
+        sunstoneParts.forEach((s, i) => {
+          if (sunstoneTaken[i] || !touchesPickup(player, s.pos, 1.1)) return;
+          sunstoneTaken[i] = true;
+          s.mesh.visible = false;
+          sparkles.emit(s.mesh.position);
+          events.push({ type: 'sunstone', index: i, collected: level.sunstonesCollected, total: sunstoneList.length });
+        });
+        tips.forEach((tip, i) => {
+          const inside = inZone(player, tip.at, tip.radius ?? 3, 6);
+          if (inside && !tipInside[i]) events.push({ type: 'tip', id: tip.id, text: tip.text, title: tip.title, action: tip.action });
+          tipInside[i] = inside;
+        });
+        if (player.velocity && !player.groundPounding) {
+          for (const u of updraftParts) {
+            if (!inUpdraft(u.def, player)) continue;
+            const lift = updraftLift(u.def, player.position.y);
+            if (player.velocity.y < lift) player.velocity.y = Math.min(lift, player.velocity.y + dt * 90);
+          }
+        }
+        if (!player.invulnerable) {
+          for (const sw of sweeperParts) {
+            if (!sweeperHits(sw.def, simTime, player)) continue;
+            const k = new THREE.Vector3(player.position.x - sw.def.center[0], 0, player.position.z - sw.def.center[2]);
+            if (k.lengthSq() < 1e-6) k.set(0, 0, 1);
+            k.normalize().multiplyScalar(SWEEPER_KNOCK);
+            k.y = 6;
+            events.push({ type: 'hurt', knockback: k });
+            break;
+          }
+        }
         heartMeshes.forEach((m, i) => {
           if (heartTaken[i] || !touchesPickup(player, [m.position.x, m.userData.base, m.position.z])) return;
           heartTaken[i] = true;
@@ -281,7 +431,7 @@ export function createLevel({ scene, quality = 'high' } = {}) {
           events.push({ type: 'checkpoint', index: cp.index, position: cp.respawn.clone() });
         }
         const inside = inZone(player, [beaconPos.x, beaconPos.y, beaconPos.z], GOAL_RADIUS, 4);
-        if (inside && !inBeaconZone && !goalReached) {
+        if (inside && !inBeaconZone && !goalReached && goalOpen) {
           if (level.beaconUnlocked) {
             goalReached = true;
             events.push({ type: 'goal' });
@@ -315,11 +465,21 @@ export function createLevel({ scene, quality = 'high' } = {}) {
       shardTaken.fill(false);
       heartTaken.fill(false);
       heartMeshes.forEach((m) => { m.visible = true; });
+      sunstoneTaken.fill(false);
+      sunstoneParts.forEach((s) => { s.mesh.visible = true; });
+      tipInside.fill(false);
+      goalOpen = !hasBoss;
+      beaconRise = goalOpen ? 1 : 0;
+      setBeaconPresent(goalOpen);
+      for (const b of blinkerParts) {
+        b.solid = true;
+        setColliderPresent(b.collider, true);
+      }
       level.shardsCollected = 0;
       activeCheckpoint = 0;
       checkpointParts.forEach((o) => setCheckpointActive(o.mesh, false));
       level.respawnPoint.copy(level.spawn);
-      setBeaconUnlocked(beaconMesh, false);
+      setBeaconUnlocked(beaconMesh, level.shardsRequired === 0 && goalOpen);
       inBeaconZone = false;
       goalReached = false;
       simTime = 0;
@@ -398,6 +558,17 @@ export function createLevel({ scene, quality = 'high' } = {}) {
       u.ringMat.opacity = u.active ? 0.35 + u.pulse * 0.6 : 0;
       u.ring.scale.setScalar(1 + u.pulse * 0.8);
     }
+
+    for (const s of sunstoneParts) {
+      const u = s.mesh.userData;
+      s.mesh.position.y = s.pos[1] + Math.sin(t * 1.8 + s.index * 2) * 0.18;
+      u.gem.rotation.y = t * 1.4;
+      u.points.rotation.y = -t * 0.9;
+      u.halo.rotation.x = Math.PI / 2 + Math.sin(t * 0.8) * 0.3;
+      u.halo.rotation.y = t * 0.6;
+    }
+    if (goalOpen && beaconRise < 1) beaconRise = Math.min(1, beaconRise + dt * 0.5);
+    beaconMesh.position.y = beaconPos.y - (1 - beaconRise) * (1 - beaconRise) * 8;
 
     const bu = beaconMesh.userData;
     const speed = bu.unlocked ? 1.6 : 0.4;
