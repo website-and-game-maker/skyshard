@@ -6,7 +6,6 @@ const _ray = new THREE.Ray();
 const _hit = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _desired = new THREE.Vector3();
-const _box = new THREE.Box3();
 
 export const CAMERA = {
   distance: 6.5,
@@ -46,12 +45,27 @@ export class FollowCamera {
   get yaw() { return this._yaw; }
   set yaw(v) { this._yaw = wrap(v); }
 
-  snap(target) {
+  // Jump straight to the target (start, respawn). Resets pitch and, if something blocks the
+  // view from the current angle (a checkpoint totem, a rock), turns to the nearest clear angle
+  // so the camera never starts squeezed up against Pip.
+  snap(target, { yaw } = {}) {
+    if (typeof yaw === 'number') this.yaw = yaw;
+    this.pitch = this.c.defaultPitch;
     this.pivot.set(target.x, target.y + this.c.pivotHeight, target.z);
+    this.yaw = this.clearYaw(this.pivot, this._yaw);
+    this.sinceLook = 0;
     this.lastTarget.copy(target);
     this.velocity.set(0, 0, 0);
     this.distance = this.c.distance;
     this._place(0, true);
+  }
+
+  // Live-tunable feel: distance, how eagerly the camera swings behind Pip, follow smoothing.
+  setOptions({ distance, autoYawDelay, autoYawRate, followXZ } = {}) {
+    if (distance > 0) this.c.distance = distance;
+    if (autoYawDelay >= 0) this.c.autoYawDelay = autoYawDelay;
+    if (autoYawRate >= 0) this.c.autoYawRate = autoYawRate;
+    if (followXZ > 0) this.c.followXZ = followXZ;
   }
 
   // Short screen shake, e.g. on ground pound.
@@ -118,13 +132,32 @@ export class FollowCamera {
       const b = col.box ?? col;
       // Ignore boxes containing the pivot (e.g. Pip standing in a doorway) so we don't snap to zero.
       if (b.containsPoint(origin)) continue;
-      _box.copy(b).expandByScalar(this.c.clipPadding);
-      if (_ray.intersectBox(_box, _hit)) {
-        const d = _hit.distanceTo(origin);
+      // Hit the real box and stop short by the padding. (Padding the box instead would put the
+      // pivot "inside" it whenever Pip stands near a wall and collapse the distance to zero.)
+      if (_ray.intersectBox(b, _hit)) {
+        const d = _hit.distanceTo(origin) - this.c.clipPadding;
         if (d < best) best = d;
       }
     }
     return Math.max(best, this.c.minDistance);
+  }
+
+  // The yaw closest to `preferred` with an unobstructed view at the default pitch.
+  clearYaw(pivot, preferred) {
+    const c = this.c;
+    const want = c.distance * 0.95;
+    let bestYaw = preferred, bestDist = -1;
+    for (let i = 0; i <= 12; i++) {
+      for (const sign of i === 0 ? [1] : [1, -1]) {
+        const y = preferred + sign * i * (Math.PI / 12);
+        const cp = Math.cos(c.defaultPitch);
+        _dir.set(Math.sin(y) * cp, Math.sin(c.defaultPitch), Math.cos(y) * cp);
+        const d = this.clipDistance(pivot, _dir, c.distance);
+        if (d >= want) return y;
+        if (d > bestDist) { bestDist = d; bestYaw = y; }
+      }
+    }
+    return bestYaw;
   }
 
   _place(dt, instant) {

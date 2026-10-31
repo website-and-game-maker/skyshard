@@ -53,6 +53,8 @@ describe('FollowCamera', () => {
     const wall = { box: new THREE.Box3(new THREE.Vector3(-10, -10, 3), new THREE.Vector3(10, 10, 4)) };
     const f = make([wall]);
     f.snap(new THREE.Vector3());
+    f.yaw = 0; // player steers the camera toward the wall
+    f.update(DT, new THREE.Vector3(), look());
     expect(f.camera.position.z).toBeLessThan(3);
     expect(f.distance).toBeLessThan(f.c.distance);
   });
@@ -89,5 +91,40 @@ describe('FollowCamera', () => {
     f.snap(new THREE.Vector3());
     f.update(DT, new THREE.Vector3(100, 0, 0), look());
     expect(f.pivot.x).toBeCloseTo(100);
+  });
+
+  it('on respawn, turns away from a post right behind Pip instead of starting squeezed against it', () => {
+    // A checkpoint totem 1.8 units behind the respawn point (camera side at yaw 0).
+    const totem = { box: new THREE.Box3(new THREE.Vector3(-0.45, 0, 1.35), new THREE.Vector3(0.45, 2.2, 2.25)) };
+    const ground = { box: new THREE.Box3(new THREE.Vector3(-20, -2, -20), new THREE.Vector3(20, 0, 20)) };
+    const f = make([totem, ground]);
+    f.yaw = 0;
+    f.snap(new THREE.Vector3(0, 0, 0));
+    expect(f.distance).toBeGreaterThan(f.c.distance * 0.9);
+    expect(Math.abs(f.yaw)).toBeLessThan(Math.PI / 2); // nearest clear angle, not a flip
+  });
+
+  it('on respawn, resets a low pitch that would put the camera into the ground', () => {
+    const ground = { box: new THREE.Box3(new THREE.Vector3(-20, -2, -20), new THREE.Vector3(20, 0, 20)) };
+    const f = make([ground]);
+    f.pitch = f.c.pitchMin;
+    f.snap(new THREE.Vector3(0, 0, 0));
+    expect(f.pitch).toBeCloseTo(f.c.defaultPitch);
+    expect(f.distance).toBeCloseTo(f.c.distance);
+  });
+
+  it('standing right next to a wall does not collapse the distance', () => {
+    const wall = { box: new THREE.Box3(new THREE.Vector3(0.2, -5, -5), new THREE.Vector3(1.2, 5, 5)) };
+    const f = make([wall]);
+    f.yaw = 0; // camera directly behind (+Z), wall to the right, not in the way
+    f.snap(new THREE.Vector3(0, 0, 0));
+    expect(f.distance).toBeCloseTo(f.c.distance);
+  });
+
+  it('keeps the current yaw on snap when the view is clear', () => {
+    const f = make();
+    f.yaw = 1;
+    f.snap(new THREE.Vector3());
+    expect(f.yaw).toBeCloseTo(1);
   });
 });

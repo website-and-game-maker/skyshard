@@ -34,6 +34,18 @@ export function clampStick(x, y) {
 
 const BUTTONS = ['jump', 'dash', 'pound', 'pause'];
 
+// Keyboard control schemes. Gamepad sticks and touch always stay camera-relative.
+//  classic: left/right strafe relative to the camera; turn the camera with the mouse or Q/E.
+//  steer:   left/right turn the camera (and Pip with it) smoothly, up runs where you face.
+//  tank:    like steer, and Pip also turns on the spot; down backs up without turning around.
+//  auto:    camera-relative like classic, but the camera swings behind Pip on its own.
+export const SCHEMES = ['classic', 'steer', 'tank', 'auto'];
+export const DEFAULT_KEYBOARD = { scheme: 'classic', turnSpeed: 2.6, turnRamp: 0.12 };
+
+const approach = (v, target, step) => (v < target ? Math.min(v + step, target) : Math.max(v - step, target));
+
+const THREE_CLAMP = (v, a, b) => Math.min(b, Math.max(a, v));
+
 export class Input {
   constructor({ element, window: win = globalThis.window, nav = globalThis.navigator, touch = 'auto' } = {}) {
     this.element = element;
@@ -45,6 +57,11 @@ export class Input {
     this.mouseSensitivity = 0.0025;
     this.padLookSpeed = 2.6; // radians/s at full deflection
     this.invertY = false;
+    this.scheme = DEFAULT_KEYBOARD.scheme;
+    this.turnSpeed = DEFAULT_KEYBOARD.turnSpeed; // radians/s for keyboard turning
+    this.turnRamp = DEFAULT_KEYBOARD.turnRamp; // seconds to reach full turn speed (smooths taps)
+    this._turnVel = 0;
+    this._lastTime = null;
     this.enabled = true;
     this.playing = true; // false behind menus: no pointer lock, no touch overlay
     this.lastDevice = 'keyboard';
@@ -53,6 +70,8 @@ export class Input {
       jump: false, dash: false, pound: false, pause: false,
       jumpPressed: false, dashPressed: false, poundPressed: false, pausePressed: false,
       jumpReleased: false,
+      faceCamera: false, // tank: Pip turns with the camera even when standing still
+      backpedal: false, // tank: moving backward keeps facing forward
       // Monotonic press counters so a fixed-step simulation never loses or repeats a press.
       counts: { jump: 0, dash: 0, pound: 0, pause: 0, jumpRelease: 0 },
     };
@@ -125,13 +144,31 @@ export class Input {
   }
 
   // Call once per frame before the game reads `state`. dt in seconds.
-  update(dt = 1 / 60) {
+  // With no dt, the time since the last call is used so turning speed doesn't depend on frame rate.
+  update(dt) {
+    if (dt === undefined) {
+      const now = globalThis.performance?.now?.() ?? Date.now();
+      dt = this._lastTime === null ? 1 / 60 : Math.min(Math.max((now - this._lastTime) / 1000, 0), 0.1);
+      this._lastTime = now;
+    }
     const s = this.state;
-    let mx = (this._key('right') ? 1 : 0) - (this._key('left') ? 1 : 0);
-    let my = (this._key('forward') ? 1 : 0) - (this._key('back') ? 1 : 0);
+    const kx = (this._key('right') ? 1 : 0) - (this._key('left') ? 1 : 0);
+    const ky = (this._key('forward') ? 1 : 0) - (this._key('back') ? 1 : 0);
+    let mx = kx;
+    let my = ky;
     let lx = this.mouseDX * this.mouseSensitivity;
     let ly = this.mouseDY * this.mouseSensitivity;
-    lx += ((this._key('camRight') ? 1 : 0) - (this._key('camLeft') ? 1 : 0)) * this.padLookSpeed * dt;
+    // Keyboard turning eases in over turnRamp so a tap nudges and a hold turns smoothly.
+    const camKeys = (this._key('camRight') ? 1 : 0) - (this._key('camLeft') ? 1 : 0);
+    const turning = this.scheme === 'steer' || this.scheme === 'tank';
+    const turnInput = THREE_CLAMP(camKeys + (turning ? kx : 0), -1, 1);
+    if (turning) mx -= kx;
+    const rate = this.turnSpeed / Math.max(this.turnRamp, 1e-3);
+    this._turnVel = approach(this._turnVel, turnInput * this.turnSpeed, rate * 2 * dt);
+    if (!turnInput && Math.abs(this._turnVel) < 1e-3) this._turnVel = 0;
+    lx += this._turnVel * dt;
+    s.faceCamera = this.scheme === 'tank';
+    s.backpedal = this.scheme === 'tank' && ky < 0 && this.lastDevice === 'keyboard';
     this.mouseDX = 0;
     this.mouseDY = 0;
     const held = { jump: this._key('jump'), dash: this._key('dash'), pound: this._key('pound'), pause: this._key('pause') };
@@ -194,7 +231,10 @@ export class Input {
     }
   }
 
-  setOptions({ sensitivity, invertY } = {}) {
+  setOptions({ sensitivity, invertY, scheme, turnSpeed, turnRamp } = {}) {
+    if (SCHEMES.includes(scheme)) this.scheme = scheme;
+    if (typeof turnSpeed === 'number' && turnSpeed > 0) this.turnSpeed = turnSpeed;
+    if (typeof turnRamp === 'number' && turnRamp >= 0) this.turnRamp = turnRamp;
     if (typeof sensitivity === 'number' && sensitivity > 0) {
       this.mouseSensitivity = 0.0025 * sensitivity;
       this.padLookSpeed = 2.6 * sensitivity;
