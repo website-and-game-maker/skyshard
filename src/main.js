@@ -10,6 +10,7 @@ import { Input } from './input/index.js';
 import { Player } from './player/index.js';
 import { FollowCamera } from './camera/index.js';
 import { createLevel } from './level/index.js';
+import { LEVELS, levelById, nextLevelId } from './level/levels/index.js';
 import { createEnemies } from './enemies/index.js';
 import { createUI } from './ui/index.js';
 import { createAudio } from './audio/index.js';
@@ -48,12 +49,32 @@ const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.6, 0.85);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
-// Game modules
-const level = createLevel({ scene, quality: settings.quality === 'low' ? 'low' : 'high' });
+// Game modules. The level and its enemies are swapped by loadLevel(); everything else lives for the session.
+const levelQuality = () => (settings.quality === 'low' ? 'low' : 'high');
+let currentDef = levelById.driftmeadow ?? LEVELS[0];
+let level = createLevel({ scene, quality: levelQuality(), layout: currentDef });
 const player = new Player({ scene, world: level });
-const enemies = createEnemies({ scene, level });
+let enemies = createEnemies({ scene, level });
 const input = new Input({ element: document.body, window });
 const follow = new FollowCamera(camera, { collidables: level.colliders });
+
+// Build a level from its definition (src/level/levels/), replacing the current one.
+function loadLevel(def) {
+  if (!def) return;
+  enemies.dispose();
+  level.dispose();
+  currentDef = def;
+  level = createLevel({ scene, quality: levelQuality(), layout: def });
+  enemies = createEnemies({ scene, level });
+  player.world = level;
+  player.controller.world = level;
+  follow.collidables = level.colliders;
+  player.setCheckpoint(level.spawn);
+  player.respawn(level.spawn);
+  follow.snap?.(player.position);
+  renderer.toneMappingExposure = level.env?.exposure ?? 1.05;
+  renderer.shadowMap.needsUpdate = true;
+}
 
 // Game state
 const game = {
@@ -90,8 +111,9 @@ function setState(next) {
   }
 }
 
-function startRun() {
+function startRun(id) {
   audio.unlock();
+  if (id && id !== currentDef.id) loadLevel(levelById[id]);
   level.reset();
   enemies.reset();
   player.setCheckpoint(level.spawn);
@@ -174,6 +196,13 @@ function handleLevelEvents(events) {
     } else if (e.type === 'heart') {
       game.health = Math.min(MAX_HEALTH, game.health + 1);
       audio.play('shard');
+    } else if (e.type === 'sunstone') {
+      audio.play('checkpoint');
+      ui.toast(`Sunstone ${e.collected} of ${e.total}!`);
+    } else if (e.type === 'tip') {
+      ui.toast(e.text);
+    } else if (e.type === 'hurt') {
+      hurtPlayer(e.knockback);
     } else if (e.type === 'goal') {
       winRun();
     }
@@ -189,6 +218,19 @@ function handleEnemyEvents(events) {
       audio.play('enemyDefeat');
     } else if (e.type === 'hurt') {
       hurtPlayer(e.knockback);
+    } else if (e.type === 'bossStart') {
+      ui.toast(`${e.name} awakens!`);
+      follow.shake?.(0.4, 0.5);
+    } else if (e.type === 'bossSlam') {
+      follow.shake?.(0.35, 0.3);
+      input.rumble?.(0.7, 180);
+    } else if (e.type === 'bossHit') {
+      ui.toast(`Hit! ${e.hp} to go`);
+      follow.shake?.(0.3, 0.3);
+    } else if (e.type === 'bossDefeated') {
+      ui.toast(`${e.name} is defeated! The beacon rises.`);
+      audio.play('checkpoint');
+      level.openGoal();
     }
   }
 }
@@ -313,6 +355,9 @@ function publishDebug() {
     totalShards: level.shardsTotal,
     health: game.health,
     deaths: game.deaths,
+    level: currentDef.id,
+    sunstones: level.sunstonesCollected,
+    boss: enemies.boss ? { hp: enemies.boss.hp, mode: enemies.boss.mode, alive: enemies.boss.alive } : null,
     fps: game.fps,
     quality: effectiveQuality(),
     timeMs: game.timeMs,
