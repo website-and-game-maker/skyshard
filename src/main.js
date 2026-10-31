@@ -13,6 +13,7 @@ import { createLevel } from './level/index.js';
 import { createEnemies } from './enemies/index.js';
 import { createUI } from './ui/index.js';
 import { createAudio } from './audio/index.js';
+import { createUsage } from './usage/index.js';
 
 const STEP = 1 / 60; // fixed simulation step
 const MAX_HEALTH = 3;
@@ -54,6 +55,8 @@ const player = new Player({ scene, world: level });
 const enemies = createEnemies({ scene, level });
 const input = new Input({ element: document.body, window });
 const follow = new FollowCamera(camera, { collidables: level.colliders });
+// Anonymous counts for a same-origin host page; silent when the game runs on its own.
+const usage = createUsage({ levelId: () => level.id ?? 'driftmeadow' });
 
 // Game state
 const game = {
@@ -78,6 +81,7 @@ player.on('fall', () => killPlayer());
 
 function setState(next) {
   game.state = next;
+  usage.setPlaying(next === 'playing');
   input.setTouchVisible(next === 'playing');
   if (next === 'playing') {
     ui.showHud();
@@ -100,6 +104,7 @@ function startRun() {
   game.health = MAX_HEALTH;
   game.timeMs = 0;
   game.deaths = 0;
+  usage.runStarted();
   setState('playing');
   canvas.focus();
 }
@@ -145,6 +150,7 @@ function killPlayer() {
 
 function winRun() {
   setState('won');
+  usage.finished(game.timeMs);
   audio.play('win');
   audio.stopMusic();
   const bestKey = 'skyshard.best';
