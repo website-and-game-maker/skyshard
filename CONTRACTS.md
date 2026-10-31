@@ -65,3 +65,9 @@ Test ids: `play` (start button), `hud`, `resume`.
 
 ## Automatic quality
 If the frame rate stays under 30 fps for 3 seconds of play, main drops one notch (high → medium → low): resolution first, then bloom, then shadow map updates (re-rendered every 10th frame instead of every frame). The quality setting is the ceiling.
+
+## Usage counts (`src/usage/index.js`)
+`createUsage({ levelId })` returns `{ runStarted(), setPlaying(bool), finished(timeMs), flush(), dispose() }`. Main calls `setPlaying` from `setState`, `runStarted` in `startRun` and `finished` in `winRun`; `levelId()` reads `level.id` (default `driftmeadow`).
+Only when the game is in a frame on the same origin (Unblock Games) does it post to the parent:
+`{ kind: 'skyshard-usage', v: 1, event }` where `event` is `session` (page opened), `run` (with `level`), `time` (with `seconds`, 1 to 60, play time only, paused time excluded) or `finish` (with `level` and `seconds`, the run time).
+No ids, scores or device details are sent. On its own (GitHub Pages, a new tab, `file://`) nothing is sent anywhere.
