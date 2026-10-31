@@ -59,7 +59,7 @@ export default {
     { id: 'sw2', center: [-7, 25.5, -58.5], length: 5.2, arms: 2, speed: -1.5, height: 0.7 },
   ],
   hazards: [
-    { id: 'lava1', style: 'lava', top: [3.5, 0.1, 2], size: [2.4, 0.25, 2] },
+    { id: 'lava1', style: 'lava', top: [-3.5, 0.1, -3.5], size: [2.4, 0.25, 2] },
     { id: 'lava2', style: 'lava', top: [11, 24.1, -40], size: [2.2, 0.25, 2.4] },
   ],
   spawn: { x: 0, y: 0, z: 4.5 },
