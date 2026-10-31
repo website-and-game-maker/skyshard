@@ -2,6 +2,7 @@ import { injectStyles } from './styles.js';
 import { loadSettings, saveSettings, sanitizeSettings, formatTime, QUALITY_LEVELS } from './settings.js';
 import { CONTROLS, DEVICES, detectDevice } from './controls.js';
 import { createPadReader, focusableIn, moveFocus, adjustControl } from './nav.js';
+import { KINDS, kindById, MESSAGE_MAX } from '../feedback/report.js';
 
 export { formatTime } from './settings.js';
 
@@ -31,7 +32,8 @@ const QUALITY_LABELS = { low: 'Low (fastest)', medium: 'Medium', high: 'High (pr
 /**
  * Builds every menu and the in-game HUD as a DOM overlay on `root`.
  * Handlers: onStart, onPause, onResume, onRestart, onQuit, onSettings(settings),
- * and optional onSound(name) for menu clicks.
+ * onFeedback(from) when a Feedback button is pressed, onFeedbackSubmit({ kind, message, includeInfo })
+ * returning a promise of 'sent' | 'queued' | 'refused' | 'failed' | { error }, and optional onSound(name) for menu clicks.
  * Pause input during play belongs to main; the UI only offers a HUD pause button.
  */
 export function createUI(root, handlers = {}, { storage = safeStorage(), env = globalThis } = {}) {
@@ -96,7 +98,12 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
         button('Settings', { testid: 'settings', onclick: () => openSettings('title') }),
       ),
       controlsCard.el,
-      bestLine,
+      h(
+        'div',
+        { class: 'ss-foot-row' },
+        bestLine,
+        h('button', { type: 'button', class: 'ss-link', testid: 'feedback', onclick: () => { sound('click'); call('onFeedback', 'title'); } }, 'Send feedback'),
+      ),
     ),
   );
 
@@ -205,10 +212,131 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
         button('Resume', { primary: true, testid: 'resume', onclick: () => call('onResume') }),
         button('Restart', { testid: 'restart', onclick: () => call('onRestart') }),
         button('Settings', { testid: 'pause-settings', onclick: () => openSettings('pause') }),
+        button('Send feedback', { testid: 'pause-feedback', onclick: () => call('onFeedback', 'pause') }),
         button('Quit to title', { testid: 'quit', onclick: () => call('onQuit') }),
       ),
     ),
   );
+
+  // ----- Feedback -----
+  // Skyshard's own form, used when the game is not inside the arcade (inside
+  // it, the arcade's dialog opens instead; see src/feedback/bridge.js).
+  let feedbackReturn = 'title';
+  let feedbackKind = KINDS[0].id;
+  let feedbackBusy = false;
+  const kindTabs = h('div', { class: 'ss-tabs', role: 'radiogroup', 'aria-label': 'Kind of feedback' });
+  const message = h('textarea', { class: 'ss-textarea', id: 'ss-feedback-text', testid: 'feedback-text', maxlength: String(MESSAGE_MAX), rows: '4' });
+  const counter = h('span', { class: 'ss-count' });
+  const includeInfo = h('input', { type: 'checkbox', id: 'ss-feedback-info', testid: 'feedback-info', checked: true });
+  const infoText = h('pre', { class: 'ss-info', testid: 'feedback-info-text' });
+  const infoRow = h(
+    'div',
+    { class: 'ss-info-row' },
+    h('label', { class: 'ss-check', for: 'ss-feedback-info' }, includeInfo, 'Include game details'),
+    h('details', { class: 'ss-details' }, h('summary', {}, 'See exactly what is sent'), infoText),
+  );
+  const feedbackStatus = h('p', { class: 'ss-status', role: 'status', 'aria-live': 'polite', testid: 'feedback-status' });
+  const sendBtn = button('Send', { primary: true, testid: 'feedback-send', onclick: () => submitFeedback() });
+  const feedbackForm = h(
+    'div',
+    { class: 'ss-fb' },
+    kindTabs,
+    h('label', { class: 'ss-fb-label', for: 'ss-feedback-text' }, 'Your message', counter),
+    message,
+    infoRow,
+    feedbackStatus,
+  );
+  const feedbackDone = h('div', { class: 'ss-fb-done', testid: 'feedback-done' });
+  makeScreen(
+    'feedback',
+    h(
+      'div',
+      { class: 'ss-panel' },
+      h('h2', { class: 'ss-h2' }, 'Send feedback'),
+      h('p', { class: 'ss-sub' }, 'It goes straight to the people who make Skyshard.'),
+      feedbackForm,
+      feedbackDone,
+      h('div', { class: 'ss-menu' }, sendBtn, button('Back', { testid: 'feedback-back', onclick: () => closeFeedback() })),
+    ),
+  );
+  message.addEventListener('input', () => renderCounter());
+
+  function renderCounter() {
+    counter.textContent = `${message.value.length} / ${MESSAGE_MAX}`;
+  }
+  function renderKinds() {
+    const kind = kindById(feedbackKind);
+    kindTabs.replaceChildren(
+      ...KINDS.map((k) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            role: 'radio',
+            class: `ss-tab${k.id === kind.id ? ' ss-on' : ''}`,
+            'aria-checked': k.id === kind.id ? 'true' : 'false',
+            testid: `feedback-kind-${k.id}`,
+            onclick: () => {
+              feedbackKind = k.id;
+              sound('click');
+              renderKinds();
+            },
+          },
+          k.label,
+        ),
+      ),
+    );
+    message.placeholder = kind.placeholder;
+    // Game details only travel with problem reports, as in the arcade.
+    infoRow.hidden = kind.type !== 'broken-game';
+  }
+  function setFeedbackDone(text) {
+    feedbackForm.hidden = !!text;
+    feedbackDone.hidden = !text;
+    feedbackDone.textContent = text || '';
+    sendBtn.hidden = !!text;
+  }
+  function openFeedback({ info = '', from = 'title' } = {}) {
+    feedbackReturn = from;
+    infoText.textContent = info;
+    feedbackStatus.textContent = '';
+    if (!feedbackBusy) setFeedbackDone('');
+    renderKinds();
+    renderCounter();
+    show('feedback');
+    if (!feedbackBusy) message.focus({ preventScroll: true });
+  }
+  function closeFeedback() {
+    if (feedbackBusy) return;
+    show(feedbackReturn);
+  }
+  async function submitFeedback() {
+    if (feedbackBusy) return;
+    feedbackBusy = true;
+    sendBtn.disabled = true;
+    message.readOnly = true;
+    feedbackStatus.textContent = 'Sending…';
+    let result = 'failed';
+    try {
+      result = (await handlers.onFeedbackSubmit?.({ kind: feedbackKind, message: message.value, includeInfo: includeInfo.checked })) ?? 'failed';
+    } catch {
+      result = 'failed';
+    }
+    feedbackBusy = false;
+    sendBtn.disabled = false;
+    message.readOnly = false;
+    if (result?.error) {
+      feedbackStatus.textContent = result.error;
+      message.focus({ preventScroll: true });
+    } else if (result === 'sent' || result === 'queued') {
+      message.value = '';
+      renderCounter();
+      setFeedbackDone(result === 'sent' ? 'Thanks! Your feedback was sent.' : 'Thanks! It is saved and will send by itself when you are back online.');
+      screens.feedback.querySelector('[data-testid="feedback-back"]')?.focus({ preventScroll: true });
+    } else {
+      feedbackStatus.textContent = result === 'refused' ? 'That could not be sent. Try shorter or plainer text.' : 'Could not send or save it here. Try again in a moment.';
+    }
+  }
 
   // ----- Win / lose -----
   const winBody = h('div');
@@ -325,7 +453,7 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
         }
         break;
       case 'confirm':
-        if (inScreen?.tagName === 'BUTTON') inScreen.click();
+        if (inScreen?.tagName === 'BUTTON' || inScreen?.tagName === 'SUMMARY') inScreen.click();
         else if (inScreen?.type === 'checkbox') adjustControl(inScreen, 1);
         else if (!inScreen) items[0]?.focus();
         break;
@@ -333,6 +461,9 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
         if (screen === 'settings') {
           sound('click');
           closeSettings();
+        } else if (screen === 'feedback') {
+          sound('click');
+          closeFeedback();
         } else if (screen === 'pause') {
           sound('click');
           call('onResume');
@@ -345,6 +476,13 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
     if (!screen) return;
     pointerMode(false);
     const t = e.target;
+    if (t?.tagName === 'TEXTAREA') {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeFeedback();
+      }
+      return;
+    }
     const isRange = t?.tagName === 'INPUT' && t.type === 'range';
     if (e.key === 'ArrowDown' || (e.key === 'ArrowRight' && !isRange && t?.tagName !== 'SELECT')) {
       e.preventDefault();
@@ -352,7 +490,7 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
     } else if (e.key === 'ArrowUp' || (e.key === 'ArrowLeft' && !isRange && t?.tagName !== 'SELECT')) {
       e.preventDefault();
       navigate('up');
-    } else if (e.key === 'Escape' && screen === 'settings') {
+    } else if (e.key === 'Escape' && (screen === 'settings' || screen === 'feedback')) {
       e.preventDefault();
       navigate('back');
     }
@@ -423,6 +561,9 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
     },
     showPause() {
       show('pause');
+    },
+    showFeedback(opts) {
+      openFeedback(opts);
     },
     hide() {
       screen = null;

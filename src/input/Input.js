@@ -34,6 +34,11 @@ export function clampStick(x, y) {
 
 const BUTTONS = ['jump', 'dash', 'pound', 'pause'];
 
+function isTyping(target) {
+  const tag = target?.tagName;
+  return tag === 'TEXTAREA' || (tag === 'INPUT' && !['range', 'checkbox', 'button'].includes(target.type)) || !!target?.isContentEditable;
+}
+
 export class Input {
   constructor({ element, window: win = globalThis.window, nav = globalThis.navigator, touch = 'auto' } = {}) {
     this.element = element;
@@ -63,6 +68,9 @@ export class Input {
     this._listeners = [];
 
     this._on(win, 'keydown', (e) => {
+      // Typing in a menu text box (the feedback form) is not game input.
+      // A menu that already handled the key (Escape closing Settings) keeps it, so it can't also resume the game.
+      if (isTyping(e.target) || e.defaultPrevented) return;
       if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault?.();
       if (!e.repeat) {
         for (const k of BUTTONS) if (KEYS[k].includes(e.code)) this._pending[k] = true;

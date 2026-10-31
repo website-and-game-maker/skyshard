@@ -41,6 +41,19 @@ describe('Input (keyboard)', () => {
     input = new Input({ element: document.body, window, nav: { getGamepads: () => [] }, touch: false });
   });
 
+  it('ignores keys typed into a text box and keys a menu already handled', () => {
+    const box = document.createElement('textarea');
+    document.body.append(box);
+    box.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', bubbles: true }));
+    box.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+    const handled = new KeyboardEvent('keydown', { code: 'Escape', bubbles: true, cancelable: true });
+    handled.preventDefault();
+    window.dispatchEvent(handled);
+    const s = input.update();
+    expect(s.pausePressed).toBe(false);
+    expect(s.jumpPressed).toBe(false);
+  });
+
   it('maps WASD and arrows to movement with +Y forward', () => {
     key('keydown', 'KeyW');
     key('keydown', 'KeyD');
