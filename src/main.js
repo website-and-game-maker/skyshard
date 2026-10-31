@@ -261,7 +261,9 @@ let fpsFrames = 0;
 let frameCount = 0;
 
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.1);
+  // realDt measures performance; dt is capped so a long stall can't teleport the game.
+  const realDt = clock.getDelta();
+  const dt = Math.min(realDt, 0.1);
   input.update();
 
   if (input.state.pausePressed && (game.state === 'playing' || game.state === 'paused')) togglePause();
@@ -287,7 +289,7 @@ function frame() {
 
   follow.update(dt, player.position, game.state === 'playing' ? input : null);
 
-  fpsAcc += dt;
+  fpsAcc += realDt;
   fpsFrames += 1;
   if (fpsAcc >= 0.5) {
     game.fps = Math.round(fpsFrames / fpsAcc);
@@ -295,7 +297,7 @@ function frame() {
     fpsFrames = 0;
     ui.setFps?.(settings.showFps ? game.fps : null);
   }
-  adaptQuality(dt);
+  adaptQuality(realDt);
 
   frameCount += 1;
   publishDebug();
