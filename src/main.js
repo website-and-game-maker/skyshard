@@ -17,15 +17,17 @@ import { createAudio } from './audio/index.js';
 import { createWorldMap } from './ui/worldmap.js';
 import { createProgress, SKINS } from './progress/index.js';
 import { applySkin } from './progress/skins.js';
+import { createTipPanel } from './ui/tutorial.js';
 
 const STEP = 1 / 60; // fixed simulation step
 const MAX_HEALTH = 3;
+const TUTORIAL_KEY = 'skyshard.tutorialDone';
 
 const canvas = document.getElementById('game');
 const audio = createAudio();
 const progress = createProgress({ levels: LEVELS });
 const ui = createUI(document.body, {
-  onStart: () => startRun(progress.nextUp()),
+  onStart: () => startRun(firstLevelId()),
   onPause: () => togglePause(),
   onResume: () => setState('playing'),
   onRestart: () => startRun(currentDef.id),
@@ -107,6 +109,45 @@ function loadLevel(def) {
   renderer.shadowMap.needsUpdate = true;
 }
 
+// Tutorial: plays first until finished or skipped; after that Play goes straight to level 1.
+const tipPanel = createTipPanel(document.body, { onSkip: () => skipTutorial() });
+let tipIndex = -1; // furthest lesson shown this run
+let nextLevelTimer = 0;
+const inTutorial = () => currentDef.id === 'tutorial';
+const afterTutorialId = () => progress.nextUp() ?? nextLevelId('tutorial');
+
+function tutorialDone() {
+  try {
+    return localStorage.getItem(TUTORIAL_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function markTutorialDone() {
+  try {
+    localStorage.setItem(TUTORIAL_KEY, '1');
+  } catch {
+    // Private mode: the tutorial just plays again next time.
+  }
+}
+function firstLevelId() {
+  return levelById.tutorial && !tutorialDone() ? 'tutorial' : afterTutorialId();
+}
+function skipTutorial() {
+  markTutorialDone();
+  startRun(afterTutorialId());
+}
+function finishTutorial() {
+  markTutorialDone();
+  tipPanel.complete('goal');
+  audio.play('win');
+  ui.toast(`Tutorial complete! Next: ${levelById[afterTutorialId()].name}`, 2400);
+  clearTimeout(nextLevelTimer);
+  nextLevelTimer = setTimeout(() => {
+    if (inTutorial() && game.state === 'playing') startRun(afterTutorialId());
+  }, 2400);
+}
+
 // Game state
 const game = {
   state: 'menu', // 'loading' | 'menu' | 'playing' | 'paused' | 'won' | 'gameover'
@@ -121,16 +162,21 @@ for (const name of ['jump', 'doubleJump', 'dash', 'pound', 'land']) {
   player.on(name, () => audio.play(name));
 }
 player.on('spring', () => audio.play('doubleJump'));
-player.on('pound', () => {
+player.on('pound', ({ position } = {}) => {
+  if (position) level.pound?.(position);
   follow.shake?.(0.3, 0.3);
   input.rumble?.(0.8, 160);
 });
 player.on('dash', () => input.rumble?.(0.3, 80));
 player.on('fall', () => killPlayer());
+for (const name of ['jump', 'doubleJump', 'dash', 'pound', 'spring']) {
+  player.on(name, () => tipPanel.complete(name));
+}
 
 function setState(next) {
   game.state = next;
   input.setTouchVisible(next === 'playing');
+  tipPanel.setVisible(next === 'playing' && inTutorial());
   if (next === 'playing') {
     ui.showHud();
     audio.startMusic('level');
@@ -148,6 +194,9 @@ function setState(next) {
 
 function startRun(id) {
   audio.unlock();
+  clearTimeout(nextLevelTimer);
+  tipPanel.hide();
+  tipIndex = -1;
   if (id && levelById[id] && id !== currentDef.id) loadLevel(levelById[id]);
   level.reset();
   enemies.reset();
@@ -269,11 +318,23 @@ function handleLevelEvents(events) {
       progress.keepSunstone(currentDef.id, e.index);
       ui.toast(`Sunstone ${e.collected} of ${e.total}!`);
     } else if (e.type === 'tip') {
-      ui.toast(e.text);
+      // Lessons only move forward, so walking back through an old zone doesn't repeat one.
+      const tips = currentDef.tips ?? [];
+      const i = tips.findIndex((t) => t.id === e.id);
+      if (i > tipIndex) {
+        tipIndex = i;
+        tipPanel.show(tips[i], i, tips.length);
+      }
+    } else if (e.type === 'switch') {
+      audio.play('checkpoint');
+      follow.shake?.(0.25, 0.4);
+      input.rumble?.(0.5, 250);
+      ui.toast('The rune awakens!');
     } else if (e.type === 'hurt') {
       hurtPlayer(e.knockback);
     } else if (e.type === 'goal') {
-      winRun();
+      if (inTutorial()) finishTutorial();
+      else winRun();
     }
   }
 }
@@ -281,6 +342,7 @@ function handleLevelEvents(events) {
 function handleEnemyEvents(events) {
   for (const e of events) {
     if (e.type === 'stomp') {
+      tipPanel.complete('stomp');
       player.bounce();
       audio.play('enemyDefeat');
     } else if (e.type === 'defeated') {
@@ -307,6 +369,9 @@ function handleEnemyEvents(events) {
 function simulate(dt) {
   game.timeMs += dt * 1000;
   player.update(dt, input, follow.yaw);
+  const s = input.state;
+  if (tipPanel.action === 'move' && Math.hypot(s.moveX, s.moveY) > 0.3) tipPanel.complete('move');
+  if (tipPanel.action === 'camera' && Math.hypot(s.lookX, s.lookY) > 0.01) tipPanel.complete('camera');
   handleLevelEvents(level.update(dt, player, game.timeMs / 1000) ?? []);
   handleEnemyEvents(enemies.update(dt, player) ?? []);
 }
@@ -377,6 +442,7 @@ function frame() {
   if (input.state.pausePressed && (game.state === 'playing' || game.state === 'paused')) togglePause();
 
   if (game.state === 'playing') {
+    tipPanel.setDevice(input.lastDevice);
     acc += dt;
     while (acc >= STEP) {
       simulate(STEP);

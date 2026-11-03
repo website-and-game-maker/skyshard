@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import driftmeadow from './levels/driftmeadow.js';
 import { islandColliders, boxCollider } from './colliders.js';
+import { createSwitches } from './switches.js';
 import {
   moverAt, isStandingOn, createCrumbleState, stepCrumble, touchesPickup, inZone,
   blinkerAt, sweeperAngle, sweeperHits, inUpdraft, updraftLift,
@@ -217,6 +218,12 @@ export function createLevel({ scene, quality = 'high', layout = driftmeadow } = 
     return { def: sw, mesh };
   });
 
+  // Rune plates and the slabs they raise (the tutorial's ground-pound lesson)
+  const switchParts = createSwitches({
+    root, colliders, switches: def.switches, platforms: def.platforms, setColliderPresent,
+  });
+  const pendingEvents = [];
+
   // Checkpoints
   const checkpointParts = checkpoints.map((def, k) => {
     const pos = islandTop(def.island, def.dx, def.dz);
@@ -335,8 +342,13 @@ export function createLevel({ scene, quality = 'high', layout = driftmeadow } = 
       sunstoneParts.forEach((s, i) => setSunstoneOwned(s.mesh, !!owned[i]));
     },
 
+    // A ground pound landed at `position`; rune plates there switch on.
+    pound(position) {
+      pendingEvents.push(...switchParts.pound(position));
+    },
+
     update(dt = 0, player = null, elapsed) {
-      const events = [];
+      const events = pendingEvents.splice(0);
       // Visual clock keeps animating behind menus (dt = 0) using elapsed time.
       let vdt = dt;
       if (typeof elapsed === 'number' && lastElapsed !== null) {
@@ -349,6 +361,7 @@ export function createLevel({ scene, quality = 'high', layout = driftmeadow } = 
       time.value = visualTime;
 
       placeMovers(simTime, dt);
+      switchParts.update(dt, visualTime);
 
       for (const b of blinkerParts) {
         const st = blinkerAt(b.def, simTime);
@@ -490,6 +503,8 @@ export function createLevel({ scene, quality = 'high', layout = driftmeadow } = 
         animateCrumbler(c);
       }
       placeMovers(0, 0);
+      switchParts.reset();
+      pendingEvents.length = 0;
     },
 
     dispose() {

@@ -73,6 +73,11 @@ Main owns pause input (Escape / gamepad Start via `input.state.pausePressed`) an
 Test ids: `play` (start button; "Continue" once you've cleared a level, it always starts a level), `worldmap`, `hud`, `resume`, `pause-map`, `next-level`, and on the map `world-<id>`, `level-<id>`, `skin-<id>`, `map-back`.
 Extra handlers: `onNext`, `onWorldMap`. `ui.addScreen(name, el)` / `ui.showScreen(name)` plug extra screens into menu navigation.
 
+## Tutorial
+`src/level/levels/tutorial.js` ("First Flight") is `LEVELS[0]` and plays on Play until it is finished or skipped (`localStorage['skyshard.tutorialDone'] = '1'`), then Play starts the level after it.
+Tip zones `{ id, at, radius, title, text, action }` drive the lesson card in `src/ui/tutorial.js` (`data-testid="tutorial-tip"`, skip button `skip-tutorial`). `{jump}`-style tokens in `text` are filled from `src/ui/controls.js` for the device in use, so keep that table in sync with input bindings. `action` (move, camera, jump, doubleJump, dash, pound, stomp, spring, goal) ticks the card off.
+Rune plates: `switches: [{ id, top, radius, raises }]` and `platforms: [{ id, top, size, hiddenUntil? }]` (`src/level/switches.js`). Main forwards Pip's `pound` event to `level.pound(position)`; a hit emits `{ type: 'switch', id }` and the slabs rise and become solid.
+
 ## Debug hook (read-only, for tests)
 `window.__SKYSHARD__ = { state, player: {x, y, z, grounded}, shards, totalShards, health, deaths, level, sunstones, boss, fps, quality, timeMs, frame }` (`timeMs` is run time, `frame` counts rendered frames), refreshed every frame.
 `state` is one of `menu | playing | paused | won | gameover`. `quality` is the effective quality after automatic drops.
