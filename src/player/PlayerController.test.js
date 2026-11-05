@@ -303,4 +303,18 @@ describe('PlayerController', () => {
     run(p, 60, { ...idle(), moveX: 1 });
     expect(Math.atan2(Math.sin(p.facing), Math.cos(p.facing))).toBeCloseTo(-Math.PI / 2, 2);
   });
+
+  it('tank: faces the camera direction even when standing still', () => {
+    const p = make();
+    run(p, 60, { ...idle(), faceCamera: true }, 1);
+    expect(p.facing).toBeCloseTo(1, 3);
+  });
+
+  it('tank: backing up keeps facing forward and is slower', () => {
+    const p = make();
+    run(p, 120, { ...idle(), moveY: -1, backpedal: true, faceCamera: true });
+    expect(p.facing).toBeCloseTo(0, 5);
+    expect(p.position.z).toBeGreaterThan(0); // moved backward (+Z)
+    expect(Math.hypot(p.velocity.x, p.velocity.z)).toBeCloseTo(p.t.runSpeed * p.t.backpedalMult, 3);
+  });
 });

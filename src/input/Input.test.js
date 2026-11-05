@@ -91,6 +91,48 @@ describe('Input (keyboard)', () => {
     expect(input.state.counts.jump).toBe(1);
   });
 
+  it('classic scheme: left/right strafe', () => {
+    key('keydown', 'ArrowLeft');
+    const s = input.update(1 / 60);
+    expect(s.moveX).toBe(-1);
+    expect(s.lookX).toBe(0);
+  });
+
+  it('steer scheme: left/right turn the camera smoothly instead of strafing', () => {
+    input.setOptions({ scheme: 'steer', turnSpeed: 3, turnRamp: 0.1 });
+    key('keydown', 'ArrowLeft');
+    const first = input.update(1 / 60);
+    expect(first.moveX).toBe(0);
+    expect(first.lookX).toBeLessThan(0); // turning left
+    const firstLook = first.lookX;
+    let last = 0;
+    for (let i = 0; i < 30; i++) last = input.update(1 / 60).lookX;
+    expect(Math.abs(last)).toBeGreaterThan(Math.abs(firstLook)); // ramps up
+    expect(last).toBeCloseTo(-3 / 60, 5); // reaches turnSpeed
+    key('keyup', 'ArrowLeft');
+    for (let i = 0; i < 30; i++) input.update(1 / 60);
+    expect(input.state.lookX).toBe(0); // eases back to a stop
+  });
+
+  it('tank scheme: sets faceCamera, and backpedal while backing up', () => {
+    input.setOptions({ scheme: 'tank' });
+    key('keydown', 'ArrowDown');
+    const s = input.update(1 / 60);
+    expect(s.faceCamera).toBe(true);
+    expect(s.backpedal).toBe(true);
+    expect(s.moveY).toBe(-1);
+  });
+
+  it('turning speed does not depend on frame rate', () => {
+    input.setOptions({ scheme: 'steer', turnRamp: 0 });
+    key('keydown', 'ArrowRight');
+    let a = 0;
+    for (let i = 0; i < 60; i++) a += input.update(1 / 60).lookX;
+    let b = 0;
+    for (let i = 0; i < 20; i++) b += input.update(1 / 20).lookX;
+    expect(a).toBeCloseTo(b, 2);
+  });
+
   it('maps dash, pound and pause keys', () => {
     key('keydown', 'ShiftLeft');
     key('keydown', 'KeyC');

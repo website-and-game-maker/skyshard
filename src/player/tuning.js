@@ -9,7 +9,8 @@ export const TUNING = {
   groundDecel: 55,
   airAccel: 30,
   airDecel: 6,
-  turnSpeed: 14, // radians/s the model turns toward travel direction
+  turnSpeed: 14,
+  backpedalMult: 0.6, // tank scheme: backing up is slower // radians/s the model turns toward travel direction
 
   gravity: 34,
   fallGravityMult: 1.55,
