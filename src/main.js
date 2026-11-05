@@ -13,6 +13,9 @@ import { createLevel } from './level/index.js';
 import { createEnemies } from './enemies/index.js';
 import { createUI } from './ui/index.js';
 import { createAudio } from './audio/index.js';
+import { createHostBridge, createSender, buildGameInfo, buildReport, checkMessage, describeClient, makeId } from './feedback/index.js';
+
+const VERSION = __SKYSHARD_VERSION__;
 
 const STEP = 1 / 60; // fixed simulation step
 const MAX_HEALTH = 3;
@@ -27,6 +30,8 @@ const ui = createUI(document.body, {
   onQuit: () => toMenu(),
   onSettings: (s) => applySettings(s),
   onSound: (name) => audio.play(name),
+  onFeedback: (from) => openFeedback(from),
+  onFeedbackSubmit: (form) => submitFeedback(form),
 });
 
 let settings = ui.getSettings();
@@ -192,6 +197,66 @@ function handleEnemyEvents(events) {
     }
   }
 }
+
+// Feedback. Inside the Unblock Games arcade, the arcade's own report dialog
+// opens (one button, one inbox); on Skyshard's own page, the game's form sends
+// to that same inbox. See src/feedback/.
+const recentErrors = [];
+window.addEventListener('error', (e) => recentErrors.push(String(e.message || 'error').slice(0, 160)));
+window.addEventListener('unhandledrejection', (e) => recentErrors.push(String(e.reason?.message || e.reason || 'rejection').slice(0, 160)));
+
+const sender = createSender();
+const bridge = createHostBridge({
+  getInfo: () => gameInfo(),
+  // The arcade's bar button pauses the game before its dialog opens.
+  onPause: () => {
+    if (game.state === 'playing') setState('paused');
+  },
+  onClosed: (sent) => {
+    if (sent) ui.toast('Thanks for the feedback!', 2400);
+    canvas.focus();
+  },
+});
+
+function gameInfo() {
+  publishDebug();
+  return buildGameInfo(window.__SKYSHARD__, {
+    version: VERSION,
+    device: input.lastDevice,
+    screen: `${window.innerWidth}x${window.innerHeight} @${Math.round((window.devicePixelRatio || 1) * 100) / 100}x`,
+    host: bridge.hostName ?? location.hostname,
+    errors: recentErrors,
+  });
+}
+
+function openFeedback(from) {
+  const info = gameInfo(); // before pausing, so it says what the player was doing
+  if (game.state === 'playing') setState('paused');
+  if (bridge.openFeedback(info)) return;
+  ui.showFeedback({ info, from });
+}
+
+async function submitFeedback({ kind, message, includeInfo }) {
+  const checked = checkMessage(message);
+  if (checked.error) return { error: checked.error };
+  const report = buildReport({
+    id: makeId(),
+    kind,
+    message: checked.message,
+    info: includeInfo ? gameInfo() : '',
+    client: describeClient(navigator.userAgent),
+    version: VERSION,
+    now: Date.now(),
+  });
+  return sender.send(report);
+}
+sender.flush();
+
+// Escape while the mouse is captured only releases it (the browser keeps that key),
+// so losing the capture mid-run pauses the game the way a second Escape would.
+document.addEventListener('pointerlockchange', () => {
+  if (!document.pointerLockElement && game.state === 'playing') setState('paused');
+});
 
 function simulate(dt) {
   game.timeMs += dt * 1000;

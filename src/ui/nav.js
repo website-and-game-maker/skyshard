@@ -60,7 +60,7 @@ export function createPadReader() {
 }
 
 export function focusableIn(el) {
-  return [...el.querySelectorAll('button, input, select')].filter((n) => !n.disabled && !n.closest('[hidden]'));
+  return [...el.querySelectorAll('button, input, select, textarea, summary')].filter((n) => !n.disabled && !n.closest('[hidden]'));
 }
 
 // Moves focus by `delta` within a list, wrapping around.

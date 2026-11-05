@@ -1,7 +1,7 @@
 {
   "name": "skyshard",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Skyshard: a 3D platformer that runs in the browser.",
   "scripts": {
