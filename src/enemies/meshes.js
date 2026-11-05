@@ -219,3 +219,155 @@ export function buildPoof() {
   group.userData = { mat, puffs, t: 1 };
   return group;
 }
+
+// Recolour every material in a model: rotate hue and scale lightness. Used for variants.
+function retint(group, hueShift, light = 1, sat = 1) {
+  const seen = new Set();
+  group.traverse((o) => {
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const m of mats) {
+      if (seen.has(m)) continue;
+      seen.add(m);
+      for (const key of ['color', 'emissive']) {
+        if (!m[key]) continue;
+        const hsl = {};
+        m[key].getHSL(hsl);
+        m[key].setHSL((hsl.h + hueShift + 1) % 1, Math.min(1, hsl.s * sat), Math.min(1, hsl.l * light));
+      }
+    }
+  });
+}
+
+// Spikeling: a Mossback cousin with a crown of glowing spikes. Stomping it hurts; ground pound it.
+export function buildSpikeling() {
+  const g = buildMossback();
+  retint(g, 0.55, 0.9, 1.1);
+  const spikeMat = std(0xffe0f0, { emissive: 0xff3d8b, emissiveIntensity: 1.2, roughness: 0.3 });
+  const body = g.children[0];
+  for (let i = 0; i < 11; i++) {
+    const a = i * 2.4, el = 0.15 + (i % 4) * 0.28;
+    const spike = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.42, 6), spikeMat));
+    const dir = new THREE.Vector3(Math.cos(a) * Math.sin(el), Math.cos(el), Math.sin(a) * Math.sin(el) * 1.2).normalize();
+    spike.position.set(dir.x * 0.68, 0.45 + dir.y * 0.6, dir.z * 0.8);
+    spike.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    body.add(spike);
+  }
+  return g;
+}
+
+// Emberbat: a Gloomwisp of the ember wilds, orange with a hot core.
+export function buildEmberbat() {
+  const g = buildWisp();
+  retint(g, -0.72, 1.15, 1.2);
+  return g;
+}
+
+// Bosses reuse the regular rigs at a larger scale inside an outer group, with extra pieces.
+// The outer group is positioned and turned from the boss state; the inner rig poses at the origin.
+const BOSS_LOOK = {
+  bramble: { build: buildMossback, scale: 2.6, hue: 0.0, light: 0.95 },
+  cinder: { build: buildMossback, scale: 2.8, hue: -0.25, light: 0.7 },
+  gloam: { build: buildWisp, scale: 2.8, hue: 0.0, light: 1 },
+};
+
+export function buildBoss(type = 'bramble') {
+  const look = BOSS_LOOK[type] ?? BOSS_LOOK.bramble;
+  const outer = new THREE.Group();
+  const rig = look.build();
+  if (look.hue || look.light !== 1) retint(rig, look.hue, look.light);
+  rig.scale.setScalar(look.scale);
+  outer.add(rig);
+
+  const crownMat = std(0xffd36b, { emissive: 0xffa21a, emissiveIntensity: 1.4, metalness: 0.6, roughness: 0.3 });
+  const crown = new THREE.Group();
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const p = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.6, 5), crownMat));
+    p.position.set(Math.cos(a) * 0.45, 0.25, Math.sin(a) * 0.45);
+    crown.add(p);
+  }
+  crown.add(shadowed(new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.08, 6, 20).rotateX(Math.PI / 2), crownMat)));
+  crown.position.y = type === 'gloam' ? 1.5 : 2.85;
+  outer.add(crown);
+
+  if (type === 'bramble') {
+    // A thicket of thorns grows on its back.
+    const thornMat = std(0x7a3d8f, { emissive: 0x2a0d33, emissiveIntensity: 0.6 });
+    for (let i = 0; i < 14; i++) {
+      const a = i * 2.4, el = 0.2 + (i % 4) * 0.25;
+      const t = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.7, 5), thornMat));
+      const dir = new THREE.Vector3(Math.cos(a) * Math.sin(el), Math.cos(el), Math.sin(a) * Math.sin(el)).normalize();
+      t.position.set(dir.x * 1.7, 1.2 + dir.y * 1.4, dir.z * 2);
+      t.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      outer.add(t);
+    }
+  } else if (type === 'cinder') {
+    // Glowing magma cracks and two big horns.
+    const lava = std(0xffb04a, { emissive: 0xff5a1a, emissiveIntensity: 2.2 });
+    for (let i = 0; i < 6; i++) {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 1.2 + (i % 3) * 0.4), lava);
+      const a = i * 1.05;
+      c.position.set(Math.cos(a) * 1.3, 2.0 - (i % 2) * 0.4, Math.sin(a) * 1.4);
+      c.rotation.y = a;
+      outer.add(c);
+    }
+    for (const s of [-1, 1]) {
+      const horn = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.6, 8), std(0x2a1e20, { roughness: 0.5 })));
+      horn.position.set(s * 0.8, 2.3, 2.2);
+      horn.rotation.set(0.7, 0, -s * 0.6);
+      outer.add(horn);
+    }
+  }
+
+  // Dizzy stars orbit the head while the boss can be stomped.
+  const starMat = std(0xfff3a0, { emissive: 0xffd84a, emissiveIntensity: 2 });
+  const stars = new THREE.Group();
+  for (let i = 0; i < 4; i++) {
+    const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), starMat);
+    s.userData.a = (i / 4) * Math.PI * 2;
+    stars.add(s);
+  }
+  stars.position.y = type === 'gloam' ? 2.2 : 3.6;
+  outer.add(stars);
+
+  const proxy = { pos: new THREE.Vector3(), yaw: 0, mode: 'patrol', timer: 0 };
+  let flash = 0;
+  outer.userData.flash = () => { flash = 1; };
+  outer.userData.animate = (e, t, dt) => {
+    outer.position.copy(e.pos);
+    outer.rotation.y = e.yaw;
+    // Map boss modes onto the base rig's poses.
+    const map = type === 'gloam'
+      ? { orbit: 'hover', dive: 'swoop', windup: 'windup', dizzy: 'rest', hurt: 'rest', rise: 'hover', intro: 'windup' }
+      : { stalk: 'patrol', windup: 'alert', charge: 'charge', leap: 'charge', dizzy: 'recover', hurt: 'recover', intro: 'alert' };
+    proxy.mode = map[e.mode] ?? 'patrol';
+    proxy.timer = e.mode === 'dizzy' ? (e.timer % 1) : e.timer;
+    rig.userData.animate(proxy, t, dt);
+    rig.position.set(0, 0, 0);
+    rig.rotation.y = 0;
+    stars.visible = e.mode === 'dizzy';
+    stars.rotation.y = t * 3;
+    stars.children.forEach((s, i) => s.position.set(Math.cos(s.userData.a) * 1.1, Math.sin(t * 4 + i) * 0.15, Math.sin(s.userData.a) * 1.1));
+    flash = Math.max(0, flash - dt * 2.5);
+    outer.visible = flash === 0 || Math.sin(t * 50) > -0.3;
+    crown.rotation.y = Math.sin(t * 2) * 0.1;
+  };
+  return outer;
+}
+
+// Fire ring for boss slams: a flat glowing torus that is scaled to the wave radius.
+export function buildWave(color = 0xff7a2a) {
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.08, 6, 64).rotateX(Math.PI / 2), mat);
+  ring.visible = false;
+  ring.userData.mat = mat;
+  return ring;
+}
+
+export function buildOrb() {
+  const mesh = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.38, 2),
+    std(0xd6b8ff, { emissive: 0x8a4cff, emissiveIntensity: 2.4, roughness: 0.3 }),
+  );
+  return mesh;
+}

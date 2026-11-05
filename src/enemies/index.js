@@ -5,12 +5,17 @@ import {
   createPuffcap, updatePuffcap, puffcapBody, PUFFCAP, updateProjectile,
 } from './ai.js';
 import { touchesSphere, isStomp, knockbackFrom, touchesHazard } from './combat.js';
-import { buildMossback, buildWisp, buildPuffcap, buildSpore, buildPoof } from './meshes.js';
+import { buildMossback, buildWisp, buildPuffcap, buildSpore, buildPoof, buildSpikeling, buildEmberbat, buildBoss, buildWave, buildOrb } from './meshes.js';
+import { createBoss, updateBoss, bossBody, hitBoss, waveHits, BOSS } from './boss.js';
 
 const KINDS = {
   mossback: { create: createMossback, step: updateMossback, body: mossbackBody, radius: MOSSBACK.radius, build: buildMossback },
   gloomwisp: { create: createWisp, step: updateWisp, body: wispBody, radius: WISP.radius, build: buildWisp },
   puffcap: { create: createPuffcap, step: updatePuffcap, body: puffcapBody, radius: PUFFCAP.radius, build: buildPuffcap },
+  // Spikeling: Mossback brain, but only a ground pound defeats it (a plain stomp hurts).
+  spikeling: { create: (s) => ({ ...createMossback(s), kind: 'spikeling' }), step: updateMossback, body: mossbackBody, radius: MOSSBACK.radius, build: buildSpikeling, spiky: true },
+  emberbat: { create: (s) => createWisp({ ...s, kind: 'emberbat', orbit: s.orbit || 3 }), step: updateWisp, body: wispBody, radius: WISP.radius, build: buildEmberbat },
+  boss: { create: createBoss, step: updateBoss, body: bossBody, radius: BOSS.radius, build: (s) => buildBoss(s?.type), boss: true },
 };
 
 const MAX_SPORES = 12;
@@ -24,7 +29,7 @@ export function createEnemies({ scene, level } = {}) {
 
   const enemies = spawns.map((spawn) => {
     const kind = KINDS[spawn.kind];
-    const mesh = kind.build();
+    const mesh = kind.build(spawn);
     root.add(mesh);
     return { spawn, kind, mesh, state: kind.create(spawn) };
   });
@@ -33,8 +38,23 @@ export function createEnemies({ scene, level } = {}) {
     const mesh = buildSpore();
     mesh.visible = false;
     root.add(mesh);
-    return { mesh, p: null };
+    return { mesh, p: null, orb: false };
   });
+
+  // Boss extras: fire rings and orbs.
+  const bossEntry = enemies.find((e) => e.kind.boss) ?? null;
+  const waves = bossEntry ? Array.from({ length: 4 }, () => {
+    const w = buildWave(bossEntry.spawn.type === 'gloam' ? 0xa27aff : 0xff7a2a);
+    root.add(w);
+    return w;
+  }) : [];
+  if (bossEntry) {
+    for (const sp of spores) {
+      sp.orbMesh = buildOrb();
+      sp.orbMesh.visible = false;
+      root.add(sp.orbMesh);
+    }
+  }
 
   const poofs = Array.from({ length: 4 }, () => {
     const g = buildPoof();
@@ -58,6 +78,9 @@ export function createEnemies({ scene, level } = {}) {
     get list() {
       return enemies.map((e) => e.state);
     },
+    get boss() {
+      return bossEntry?.state ?? null;
+    },
 
     update(dt = 0, player = null) {
       const events = [];
@@ -69,13 +92,51 @@ export function createEnemies({ scene, level } = {}) {
         const s = e.state;
         if (!s.alive) continue;
         const shot = e.kind.step(s, dt, player);
-        if (shot) {
+        if (shot?.slam) {
+          events.push({ type: 'bossSlam', position: shot.position });
+        } else if (shot) {
           const slot = spores.find((sp) => !sp.p);
-          if (slot) slot.p = shot;
+          if (slot) {
+            slot.p = shot;
+            slot.orb = !!e.kind.boss;
+          }
+        }
+        if (e.kind.boss && s.active && !s.announced) {
+          s.announced = true;
+          events.push({ type: 'bossStart', name: s.name, hp: s.hp, maxHp: s.maxHp });
+        }
+        if (e.kind.boss && player && !player.invulnerable && !hurt) {
+          const src = waveHits(s, player);
+          if (src) hurt = knockbackFrom(src, player);
         }
         if (!player || stomped) continue;
         e.kind.body(s, body);
         if (!touchesSphere(player, body, e.kind.radius)) continue;
+        if (e.kind.boss) {
+          const fromAbove = isStomp(player, body) && player.position.y > s.pos.y + 1.2;
+          if (fromAbove) {
+            const result = hitBoss(s);
+            stomped = true;
+            if (result) {
+              e.mesh.userData.flash?.();
+              poof(body);
+              events.push({ type: 'stomp', kind: 'boss', position: body.clone() });
+              events.push(result === 'defeated'
+                ? { type: 'bossDefeated', name: s.name, position: body.clone() }
+                : { type: 'bossHit', hp: s.hp, maxHp: s.maxHp });
+            } else {
+              events.push({ type: 'stomp', kind: 'bossBlock', position: body.clone() }); // bounces off, no damage
+            }
+          } else if (!player.invulnerable && !hurt && s.mode !== 'dizzy' && s.mode !== 'hurt') {
+            hurt = knockbackFrom(body, player);
+          }
+          continue;
+        }
+        if (e.kind.spiky && !player.groundPounding && isStomp(player, body)) {
+          // Landing on spikes: Pip is bounced off and hurt.
+          if (!player.invulnerable && !hurt) hurt = knockbackFrom(body, player);
+          continue;
+        }
         if (isStomp(player, body)) {
           s.alive = false;
           stomped = true;
@@ -120,6 +181,7 @@ export function createEnemies({ scene, level } = {}) {
     reset() {
       for (const e of enemies) e.state = e.kind.create(e.spawn);
       for (const sp of spores) sp.p = null;
+      for (const w of waves) w.visible = false;
       for (const g of poofs) g.visible = false;
       animate(0);
     },
@@ -139,8 +201,23 @@ export function createEnemies({ scene, level } = {}) {
       e.mesh.visible = e.state.alive;
       if (e.state.alive) e.mesh.userData.animate(e.state, time, dt);
     }
+    if (bossEntry) {
+      const s = bossEntry.state;
+      waves.forEach((w, i) => {
+        const wave = s.waves[i];
+        w.visible = !!wave && s.alive;
+        if (!w.visible) return;
+        w.position.set(s.center.x, s.home.y + 0.15, s.center.z);
+        w.scale.set(wave.r, 1, wave.r);
+        w.userData.mat.opacity = 0.9 * (1 - wave.r / (s.arenaRadius + 1)) + 0.1;
+      });
+    }
     for (const sp of spores) {
-      sp.mesh.visible = !!sp.p;
+      if (sp.orbMesh) {
+        sp.orbMesh.visible = !!sp.p && sp.orb;
+        if (sp.orbMesh.visible) sp.orbMesh.position.copy(sp.p.pos);
+      }
+      sp.mesh.visible = !!sp.p && !sp.orb;
       if (sp.p) {
         sp.mesh.position.copy(sp.p.pos);
         sp.mesh.rotation.y += dt * 4;

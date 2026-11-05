@@ -6,6 +6,10 @@ export const THEMES = {
   meadow: { grass: [0x8fd36f, 0x5fae5a], rock: [0xd2c1ae, 0xa48c79, 0x705f58], foliage: [0x6cbf5c, 0x93d66c], blossom: [0xffe27a, 0xffffff, 0xff9fb8] },
   crystal: { grass: [0x86d9be, 0x4fa898], rock: [0xc4bdd6, 0x938bb2, 0x5f587e], foliage: [0xf4a9cb, 0xffc6dc], blossom: [0xffffff, 0xc8a6ff, 0x9ff2ff] },
   spire: { grass: [0xb5dc7a, 0x86b95f], rock: [0xdac7a6, 0xb0916f, 0x7d6551], foliage: [0xf2b45c, 0xf7d071], blossom: [0xff8a65, 0xffe082, 0xffffff] },
+  ember: { grass: [0x8a3a2a, 0x5a2420], rock: [0x5a4a4a, 0x3a2e30, 0x221a1e], foliage: [0xff7a3a, 0xffb04a], blossom: [0xffd27a, 0xff6a3a, 0xfff0c0] },
+  ash: { grass: [0x9a8478, 0x6e5a54], rock: [0x6a5e5c, 0x4a3e40, 0x2e2428], foliage: [0xd9653a, 0xf2a35a], blossom: [0xffb070, 0xffffff, 0xff7050] },
+  frost: { grass: [0xd8ecff, 0xa6c8ef], rock: [0x8a96c8, 0x5d6aa0, 0x3a4272], foliage: [0xbfe6ff, 0xffffff], blossom: [0x9ff2ff, 0xffffff, 0xc8a6ff] },
+  starlit: { grass: [0x6a7ad8, 0x4652a8], rock: [0x6a5ea8, 0x463c80, 0x2a2456], foliage: [0xb48cff, 0x7af0ff], blossom: [0xfff6b0, 0x9ff2ff, 0xffffff] },
   beacon: { grass: [0xc2e690, 0x8fcc72], rock: [0xe6d8c2, 0xbca487, 0x8a7361], foliage: [0xfff0b0, 0xffd27a], blossom: [0xffffff, 0xffe9a8, 0x9ff2ff] },
 };
 
@@ -420,7 +424,7 @@ export function buildWaterfall(island, angle, timeUniform) {
 }
 
 // Background islands give the sky depth. Low detail, no colliders, and fogged.
-export function createDistantIslands(group, quality) {
+export function createDistantIslands(group, quality, themes = ['meadow', 'crystal', 'spire', 'beacon']) {
   const rand = mulberry32(99);
   const count = quality === 'low' ? 6 : 12;
   const mat = islandMaterial();
@@ -430,7 +434,7 @@ export function createDistantIslands(group, quality) {
     const isl = {
       x: Math.cos(a) * dist, y: -8 + rand() * 40, z: Math.sin(a) * dist - 45,
       radius: 5 + rand() * 10, depth: 8 + rand() * 12,
-      theme: ['meadow', 'crystal', 'spire', 'beacon'][i % 4],
+      theme: themes[i % themes.length],
     };
     const mesh = new THREE.Mesh(buildIslandGeometry(isl, 28), mat);
     mesh.position.set(isl.x, isl.y, isl.z);

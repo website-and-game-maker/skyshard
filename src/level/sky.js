@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32 } from './random.js';
+import { resolveEnv } from './env.js';
 
 export const SUN_DIRECTION = new THREE.Vector3(-0.45, 0.62, 0.64).normalize();
 export const FOG_COLOR = new THREE.Color(0xf6dccb);
@@ -21,6 +22,8 @@ const skyFragment = /* glsl */ `
   uniform vec3 uHorizon;
   uniform vec3 uBelow;
   uniform vec3 uSunDir;
+  uniform vec3 uSunColor;
+  uniform float uStars;
   uniform float uTime;
   varying vec3 vDir;
 
@@ -44,9 +47,23 @@ const skyFragment = /* glsl */ `
     col = mix(col, uBelow, smoothstep(0.0, -0.25, h));
 
     float sd = max(dot(d, uSunDir), 0.0);
-    col += vec3(1.0, 0.82, 0.6) * pow(sd, 8.0) * 0.35;
-    col += vec3(1.0, 0.9, 0.75) * pow(sd, 64.0) * 0.6;
-    col += vec3(1.0, 0.97, 0.9) * smoothstep(0.9993, 0.9997, sd) * 4.0;
+    col += uSunColor * vec3(1.0, 0.82, 0.6) * pow(sd, 8.0) * 0.35;
+    col += uSunColor * vec3(1.0, 0.9, 0.75) * pow(sd, 64.0) * 0.6;
+    col += uSunColor * smoothstep(0.9993, 0.9997, sd) * 4.0;
+
+    if (uStars > 0.0 && h > 0.0) {
+      // Twinkling star field on a grid of cells, plus a soft aurora band.
+      vec2 sv = d.xz / (h + 0.35) * 90.0;
+      vec2 cell = floor(sv);
+      float r = hash(cell);
+      vec2 off = vec2(hash(cell + 3.1), hash(cell + 7.7)) - 0.5;
+      float star = smoothstep(0.09, 0.0, length(fract(sv) - 0.5 - off * 0.6)) * step(0.93, r);
+      star *= 0.6 + 0.4 * sin(uTime * (1.5 + r * 3.0) + r * 40.0);
+      col += vec3(0.9, 0.95, 1.0) * star * uStars * smoothstep(0.02, 0.3, h) * 1.6;
+      float band = fbm(vec2(d.x * 2.0 + uTime * 0.01, d.z * 0.7)) ;
+      float aur = smoothstep(0.35, 0.75, band) * smoothstep(0.15, 0.45, h) * smoothstep(0.9, 0.5, h);
+      col += mix(vec3(0.2, 1.0, 0.7), vec3(0.6, 0.3, 1.0), d.x * 0.5 + 0.5) * aur * 0.35 * uStars;
+    }
 
     if (h > 0.02) {
       vec2 uv = d.xz / (h + 0.18) * 1.6 + vec2(uTime * 0.006, uTime * 0.002);
@@ -60,13 +77,16 @@ const skyFragment = /* glsl */ `
   }
 `;
 
-export function createSky(scene) {
+export function createSky(scene, envDef) {
+  const { sky } = resolveEnv(envDef);
   const uniforms = {
-    uZenith: { value: new THREE.Color(0x5d97e0) },
-    uMid: { value: new THREE.Color(0x9cc6f0) },
-    uHorizon: { value: FOG_COLOR.clone() },
-    uBelow: { value: new THREE.Color(0xf2c9c4) },
+    uZenith: { value: new THREE.Color(sky.zenith) },
+    uMid: { value: new THREE.Color(sky.mid) },
+    uHorizon: { value: new THREE.Color(sky.horizon) },
+    uBelow: { value: new THREE.Color(sky.below) },
     uSunDir: { value: SUN_DIRECTION.clone() },
+    uSunColor: { value: new THREE.Color(sky.sun ?? 0xfff8ee) },
+    uStars: { value: sky.stars ?? 0 },
     uTime: { value: 0 },
   };
   const mat = new THREE.ShaderMaterial({
@@ -93,10 +113,11 @@ export function createSky(scene) {
 
 // Hemisphere fill plus a warm sun that casts shadows. The shadow frustum follows
 // the player so a modest shadow map stays sharp anywhere in the level.
-export function createLights(scene, quality) {
-  const hemi = new THREE.HemisphereLight(0xd6e8ff, 0xe8b894, 0.85);
+export function createLights(scene, quality, envDef) {
+  const env = resolveEnv(envDef);
+  const hemi = new THREE.HemisphereLight(env.hemi.sky, env.hemi.ground, env.hemi.intensity);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff0da, 2.7);
+  const sun = new THREE.DirectionalLight(env.sun.color, env.sun.intensity);
   sun.castShadow = true;
   const size = quality === 'low' ? 1024 : 2048;
   sun.shadow.mapSize.set(size, size);
@@ -123,7 +144,8 @@ export function createLights(scene, quality) {
 
 // A sea of soft cumulus far below the islands, plus a few drifting clouds at
 // island height. Each cloud is a cluster of squashed spheres in one InstancedMesh.
-export function createClouds(scene, quality) {
+export function createClouds(scene, quality, envDef) {
+  const cl = resolveEnv(envDef).clouds;
   const rand = mulberry32(77);
   const puffs = [];
   const seaCount = quality === 'low' ? 70 : 150;
@@ -139,7 +161,7 @@ export function createClouds(scene, quality) {
     addCloud(puffs, rand, Math.cos(a) * r, 5 + rand() * 35, Math.sin(a) * r - 45, 3 + rand() * 4, 1.5 + rand() * 1.5);
   }
   const geo = new THREE.IcosahedronGeometry(1, 1);
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, emissive: 0xffe7d6, emissiveIntensity: 0.28 });
+  const mat = new THREE.MeshStandardMaterial({ color: cl.color, roughness: 1, metalness: 0, emissive: cl.emissive, emissiveIntensity: cl.glow });
   const mesh = new THREE.InstancedMesh(geo, mat, puffs.length);
   mesh.name = 'clouds';
   const m = new THREE.Matrix4();
@@ -147,7 +169,7 @@ export function createClouds(scene, quality) {
   puffs.forEach((p, i) => {
     m.compose(new THREE.Vector3(p.x, p.y, p.z), q, new THREE.Vector3(p.s, p.s * p.flat, p.s));
     mesh.setMatrixAt(i, m);
-    mesh.setColorAt(i, new THREE.Color().setHSL(0.07, 0.4, 0.88 + rand() * 0.1));
+    mesh.setColorAt(i, new THREE.Color().setHSL(cl.hue, 0.4, 0.88 + rand() * 0.1));
   });
   mesh.frustumCulled = false;
   scene.add(mesh);
@@ -155,7 +177,7 @@ export function createClouds(scene, quality) {
   // A soft floor under the cloud sea so there is never an empty void below.
   const floor = new THREE.Mesh(
     new THREE.CircleGeometry(420, 48).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ color: 0xf7e2d6, fog: true }),
+    new THREE.MeshBasicMaterial({ color: cl.floor, fog: true }),
   );
   floor.position.set(0, -42, -45);
   scene.add(floor);
@@ -185,7 +207,8 @@ function addCloud(puffs, rand, x, y, z, size, flat) {
 }
 
 // Floating pollen around the camera. A tiny ShaderMaterial draws round soft points.
-export function createMotes(scene, quality) {
+export function createMotes(scene, quality, envDef) {
+  const tint = new THREE.Color(resolveEnv(envDef).motes);
   const count = quality === 'low' ? 0 : 260;
   if (!count) return { update() {}, points: null };
   const rand = mulberry32(5);
@@ -200,7 +223,7 @@ export function createMotes(scene, quality) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
-  const uniforms = { uTime: { value: 0 }, uCenter: { value: new THREE.Vector3() } };
+  const uniforms = { uTime: { value: 0 }, uCenter: { value: new THREE.Vector3() }, uTint: { value: tint } };
   const mat = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
@@ -219,11 +242,11 @@ export function createMotes(scene, quality) {
         vA = 0.5 + 0.5 * sin(uTime * 1.3 + aSeed * 3.0);
       }`,
     fragmentShader: /* glsl */ `
-      varying float vA;
+      uniform vec3 uTint; varying float vA;
       void main() {
         float d = length(gl_PointCoord - 0.5);
         float a = smoothstep(0.5, 0.0, d) * (0.25 + 0.45 * vA);
-        gl_FragColor = vec4(1.0, 0.93, 0.75, a);
+        gl_FragColor = vec4(uTint, a);
       }`,
   });
   const points = new THREE.Points(geo, mat);

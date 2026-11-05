@@ -339,3 +339,131 @@ export function createSparkles(scene, max = 6) {
   };
 }
 
+
+// ---- World 2 and 3 props --------------------------------------------------------------
+
+// Updraft: a column of rising wind drawn as spiralling translucent ribbons and a glowing vent.
+export function buildUpdraft(def, timeUniform) {
+  const { radius, height } = def;
+  const group = new THREE.Group();
+  const uniforms = { uTime: timeUniform, uColor: { value: new THREE.Color(def.color ?? 0xbff8ff) } };
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
+      void main() {
+        float stripes = smoothstep(0.55, 1.0, sin((vUv.x * 6.0 + vUv.y * 3.0 - uTime * 1.6) * 6.2831) * 0.5 + 0.5);
+        float fade = smoothstep(0.0, 0.12, vUv.y) * smoothstep(1.0, 0.6, vUv.y);
+        gl_FragColor = vec4(uColor, stripes * fade * 0.45);
+      }`,
+  });
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.8, height, 24, 1, true).translate(0, height / 2, 0), mat);
+  tube.renderOrder = 3;
+  const vent = new THREE.Mesh(
+    new THREE.TorusGeometry(radius * 0.85, 0.12, 8, 32).rotateX(Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0xdff8ff, emissive: def.color ?? 0x6fe0ff, emissiveIntensity: 1.6 }),
+  );
+  vent.position.y = 0.06;
+  group.add(tube, vent);
+  return group;
+}
+
+// Phase slab: a glassy crystal platform that blinks in and out on a timer.
+export function buildBlinker(def) {
+  const [w, h, d] = def.size;
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: def.color ?? 0xb69cff, emissive: def.color ?? 0x7a5cff, emissiveIntensity: 0.8,
+    roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.9,
+  });
+  const body = new THREE.Mesh(roundedSlabGeometry(w, h, d, 0.2), mat);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+  const edge = new THREE.Mesh(roundedSlabGeometry(w + 0.06, 0.06, d + 0.06, 0.22), edgeMat);
+  edge.position.y = 0.01;
+  group.add(body, edge);
+  group.userData = { mat, edgeMat };
+  return group;
+}
+
+// Sweeper: a hub post with rotating arms tipped with glowing spikes. Hurts on contact.
+export function buildSweeper(def) {
+  const group = new THREE.Group();
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.45, 0.6, def.height ?? 1.2, 10),
+    new THREE.MeshStandardMaterial({ color: 0x3a2e30, roughness: 0.6, metalness: 0.4 }),
+  );
+  post.position.y = (def.height ?? 1.2) / 2;
+  post.castShadow = true;
+  const rotor = new THREE.Group();
+  rotor.position.y = def.height ?? 1.2;
+  const armMat = new THREE.MeshStandardMaterial({ color: def.color ?? 0xff6a3a, emissive: def.color ?? 0xff4a1a, emissiveIntensity: 1.4, roughness: 0.4 });
+  const arms = def.arms ?? 1;
+  for (let k = 0; k < arms; k++) {
+    const arm = new THREE.Group();
+    arm.rotation.y = (k / arms) * Math.PI * 2;
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, def.length, 8).rotateZ(Math.PI / 2).translate(def.length / 2, 0, 0), armMat);
+    bar.castShadow = true;
+    arm.add(bar);
+    for (let s = 1; s <= Math.floor(def.length); s++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.45, 6), armMat);
+      spike.position.set(s, 0.25, 0);
+      arm.add(spike);
+    }
+    rotor.add(arm);
+  }
+  group.add(post, rotor);
+  group.userData.rotor = rotor;
+  return group;
+}
+
+// Sunstone: a rare golden star-gem with a halo ring. Three are hidden in every level.
+export function buildSunstone() {
+  const group = new THREE.Group();
+  const gemMat = new THREE.MeshStandardMaterial({ color: 0xffe58a, emissive: 0xffa21a, emissiveIntensity: 2.2, roughness: 0.15, metalness: 0.3, flatShading: true });
+  const gem = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), gemMat);
+  const points = new THREE.Mesh(new THREE.OctahedronGeometry(0.6, 0).scale(1, 0.35, 1), gemMat);
+  const haloMat = new THREE.MeshBasicMaterial({ color: 0xfff1b8, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.035, 6, 40), haloMat);
+  group.add(gem, points, halo);
+  group.userData = { gem, points, halo, gemMat, haloMat };
+  return group;
+}
+
+export function setSunstoneOwned(stone, owned) {
+  const u = stone.userData;
+  u.gemMat.transparent = owned;
+  u.gemMat.opacity = owned ? 0.35 : 1;
+  u.haloMat.opacity = owned ? 0.15 : 0.6;
+}
+
+// Lava pool: a glowing, slowly churning disc. The collider is a hazard box.
+export function buildLava(size, timeUniform) {
+  const [w, h, d] = size;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTime: timeUniform },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `uniform float uTime; varying vec2 vUv;
+      void main() {
+        vec2 p = vUv * 6.0;
+        float n = sin(p.x * 1.7 + uTime * 0.8) * sin(p.y * 1.3 - uTime * 0.6) + sin((p.x + p.y) * 2.1 + uTime);
+        vec3 col = mix(vec3(1.0, 0.25, 0.05), vec3(1.0, 0.85, 0.3), smoothstep(0.2, 1.6, n));
+        gl_FragColor = vec4(col * vec3(1.05, 0.8, 0.7), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const top = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), mat);
+  top.position.y = h - 0.02;
+  const rim = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 0.3, h, d + 0.3).translate(0, h / 2 - 0.06, 0),
+    new THREE.MeshStandardMaterial({ color: 0x2a1e20, roughness: 0.9 }),
+  );
+  const group = new THREE.Group();
+  group.add(rim, top);
+  return group;
+}

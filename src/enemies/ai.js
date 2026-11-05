@@ -113,9 +113,10 @@ export const mossbackBody = (e, out = new THREE.Vector3()) => out.copy(e.pos).se
 
 // ---- Gloomwisp: a hovering shadow that winds up, then swoops at where Pip was.
 
-export function createWisp({ home, phase = 0 }) {
+export function createWisp({ home, phase = 0, orbit = 0, kind = 'gloomwisp' }) {
   return {
-    kind: 'gloomwisp',
+    kind,
+    orbit,
     home: home.clone(),
     pos: home.clone(),
     yaw: 0,
@@ -139,7 +140,8 @@ export function updateWisp(e, dt, player) {
   switch (e.mode) {
     case 'hover': {
       const t = e.clock;
-      e.pos.set(e.home.x + Math.cos(t * 0.7) * 1.2, e.home.y + Math.sin(t * 1.6) * 0.35, e.home.z + Math.sin(t * 0.7) * 1.2);
+      const r = e.orbit || 1.2;
+      e.pos.set(e.home.x + Math.cos(t * 0.7) * r, e.home.y + Math.sin(t * 1.6) * 0.35, e.home.z + Math.sin(t * 0.7) * r);
       if (player && chestOf(player, tmp).distanceTo(e.pos) < WISP.sight) {
         e.mode = 'windup';
         e.timer = 0;
