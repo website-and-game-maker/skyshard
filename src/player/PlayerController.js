@@ -50,6 +50,8 @@ export class PlayerController extends Emitter {
     o.moveX = s.moveX || 0;
     o.moveY = s.moveY || 0;
     o.jump = !!s.jump;
+    o.faceCamera = !!s.faceCamera;
+    o.backpedal = !!s.backpedal;
     const c = s.counts;
     if (c) {
       const seen = this._seen ?? { ...c };
@@ -215,7 +217,7 @@ export class PlayerController extends Emitter {
       }
     } else {
       const control = this.state === STATE.HURT ? 0.2 : 1;
-      const target = t.runSpeed * wishLen;
+      const target = t.runSpeed * wishLen * (s.backpedal ? t.backpedalMult : 1);
       const accel = (this.grounded ? (wishLen > 0 ? t.groundAccel : t.groundDecel) : (wishLen > 0 ? t.airAccel : t.airDecel)) * control;
       if (wishLen > 0) {
         const tx = _wish.x * target, tz = _wish.z * target;
@@ -234,9 +236,11 @@ export class PlayerController extends Emitter {
       if (v.y <= 0) this.jumping = false;
     }
 
-    // Facing follows travel direction.
-    if (this.state !== STATE.POUND && this.state !== STATE.HURT && Math.hypot(v.x, v.z) > 0.5 && wishLen > 0.05) {
-      const want = Math.atan2(-_wish.x, -_wish.z);
+    // Facing follows travel direction (tank scheme: follows the camera, and backing up keeps facing).
+    const canTurn = this.state !== STATE.POUND && this.state !== STATE.HURT;
+    const turnToTravel = Math.hypot(v.x, v.z) > 0.5 && wishLen > 0.05 && !s.backpedal;
+    if (canTurn && (turnToTravel || s.faceCamera)) {
+      const want = s.faceCamera ? cameraYaw : Math.atan2(-_wish.x, -_wish.z);
       let diff = want - this.facing;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       const maxTurn = t.turnSpeed * dt;
