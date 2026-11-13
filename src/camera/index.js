@@ -1,1 +1,1 @@
-export { FollowCamera, CAMERA } from './FollowCamera.js';
+export { FollowCamera, CAMERA, CAMERA_STYLES, DEFAULT_CAMERA_STYLE } from './FollowCamera.js';

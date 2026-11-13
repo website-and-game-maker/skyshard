@@ -41,6 +41,13 @@ describe('settings', () => {
     expect(s).toEqual({ ...DEFAULT_SETTINGS, master: 1, music: 0, sensitivity: 0.2, showFps: true });
   });
 
+  it('camera style defaults to close follow, keeps relaxed, and rejects junk', () => {
+    expect(DEFAULT_SETTINGS.cameraStyle).toBe('close');
+    expect(sanitizeSettings({}).cameraStyle).toBe('close'); // older saves without the field get the new default
+    expect(sanitizeSettings({ cameraStyle: 'relaxed' }).cameraStyle).toBe('relaxed');
+    expect(sanitizeSettings({ cameraStyle: 'spin' }).cameraStyle).toBe('close');
+  });
+
   it('round-trips through storage', () => {
     const storage = memoryStorage();
     saveSettings(storage, { ...DEFAULT_SETTINGS, music: 0.2, quality: 'low' });

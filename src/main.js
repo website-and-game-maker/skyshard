@@ -96,6 +96,14 @@ function openWorldMap() {
   worldMap.show(currentDef.world);
 }
 
+// Start (and every respawn) faces Pip and the camera down the course, so the first press
+// of forward runs into the level instead of off to the side.
+function snapBehindPip() {
+  const yaw = level.forwardYaw ?? 0;
+  player.controller.facing = yaw;
+  follow.snap?.(player.position, { yaw });
+}
+
 // Build a level from its definition (src/level/levels/), replacing the current one.
 function loadLevel(def) {
   if (!def) return;
@@ -109,7 +117,7 @@ function loadLevel(def) {
   follow.collidables = level.colliders;
   player.setCheckpoint(level.spawn);
   player.respawn(level.spawn);
-  follow.snap?.(player.position);
+  snapBehindPip();
   renderer.toneMappingExposure = level.env?.exposure ?? 1.05;
   renderer.shadowMap.needsUpdate = true;
 }
@@ -208,7 +216,7 @@ function startRun(id) {
   level.setSunstonesOwned?.(progress.record(currentDef.id)?.sunstones ?? []);
   player.setCheckpoint(level.spawn);
   player.respawn(level.spawn);
-  follow.snap?.(player.position);
+  snapBehindPip();
   game.health = MAX_HEALTH;
   game.timeMs = 0;
   game.deaths = 0;
@@ -230,6 +238,7 @@ function applySettings(s) {
   settings = s;
   audio.setVolumes({ master: s.master, music: s.music, sfx: s.sfx });
   input.setOptions?.({ sensitivity: s.sensitivity, invertY: s.invertY });
+  follow.setStyle?.(s.cameraStyle);
   resize();
 }
 
@@ -251,7 +260,7 @@ function killPlayer() {
   game.health = MAX_HEALTH;
   audio.play('lose');
   player.respawn(level.respawnPoint);
-  follow.snap?.(player.position);
+  snapBehindPip();
   ui.toast('Back to the last checkpoint');
 }
 
@@ -568,6 +577,6 @@ function publishDebug() {
 resize();
 applySettings(settings);
 player.respawn(level.spawn);
-follow.snap?.(player.position);
+snapBehindPip();
 setState('menu');
 requestAnimationFrame(frame);
