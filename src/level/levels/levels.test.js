@@ -35,6 +35,13 @@ for (const def of LEVELS.filter((l) => l.route)) {
       expect(groundHeightAt(level.colliders, def.spawn.x, def.spawn.z, def.spawn.y + 0.1)).toBeCloseTo(def.spawn.y, 1);
     });
 
+    it('starts the camera facing down the course, not off to the side', () => {
+      const level = createLevel({ scene: new THREE.Scene(), quality: 'low', layout: def });
+      const fwd = new THREE.Vector3(-Math.sin(level.forwardYaw), 0, -Math.cos(level.forwardYaw));
+      const goal = level.beaconPosition.clone().sub(level.spawn).setY(0).normalize();
+      expect(fwd.dot(goal)).toBeGreaterThan(Math.cos(Math.PI / 4)); // within 45 degrees
+    });
+
     it('can be finished along its route with real Pip physics', () => {
       const level = createLevel({ scene: new THREE.Scene(), quality: 'low', layout: def });
       const result = playRoute(level, PlayerController, { beforeGoal: () => level.openGoal() });
