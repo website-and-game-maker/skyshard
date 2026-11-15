@@ -5,12 +5,15 @@
 export const SETTINGS_KEY = 'skyshard.settings';
 
 export const QUALITY_LEVELS = ['low', 'medium', 'high'];
+// Camera feels (see CAMERA_STYLES in src/camera). 'close' is the default; 'relaxed' is the original camera.
+export const CAMERA_STYLE_IDS = ['close', 'relaxed'];
 
 export const DEFAULT_SETTINGS = Object.freeze({
   master: 0.8,
   music: 0.6,
   sfx: 0.9,
   sensitivity: 1,
+  cameraStyle: 'close',
   invertY: false,
   quality: 'high',
   showFps: false,
@@ -30,6 +33,7 @@ export function sanitizeSettings(raw) {
     music: num(s.music, 0, 1, d.music),
     sfx: num(s.sfx, 0, 1, d.sfx),
     sensitivity: num(s.sensitivity, 0.2, 3, d.sensitivity),
+    cameraStyle: CAMERA_STYLE_IDS.includes(s.cameraStyle) ? s.cameraStyle : d.cameraStyle,
     invertY: typeof s.invertY === 'boolean' ? s.invertY : d.invertY,
     quality: QUALITY_LEVELS.includes(s.quality) ? s.quality : d.quality,
     showFps: typeof s.showFps === 'boolean' ? s.showFps : d.showFps,

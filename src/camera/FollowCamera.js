@@ -1,5 +1,7 @@
 // Third-person orbit camera that follows Pip, avoids clipping into level geometry,
-// and drifts behind the direction of travel when the player isn't steering it.
+// and swings behind the direction of travel when the player isn't steering it.
+// Two feels ship: 'close' (default, sticks tight and turns with Pip) and 'relaxed'
+// (the original lazier camera, kept as an option in Settings).
 import * as THREE from 'three';
 
 const _ray = new THREE.Ray();
@@ -19,9 +21,42 @@ export const CAMERA = {
   followYDown: 9,
   autoYawDelay: 1.2, // seconds after manual look before auto-follow resumes
   autoYawRate: 0.9,
+  autoYawMax: 0, // cap on auto-swing speed in rad/s (0 = the relaxed sine-weighted swing)
+  autoPitchRate: 0.6,
+  bandBelow: 2.2, // how far the pivot may lag below / above Pip before it is dragged along
+  bandAbove: 1.6,
   menuOrbit: 0.12, // radians/s behind menus
   clipPadding: 0.3,
 };
+
+// Named camera feels. 'relaxed' is exactly the original tuning above.
+export const CAMERA_STYLES = Object.freeze({
+  close: Object.freeze({
+    distance: 5.6,
+    followXZ: 40,
+    followYUp: 10,
+    followYDown: 16,
+    autoYawDelay: 0.35,
+    autoYawRate: 3,
+    autoYawMax: 1.6,
+    autoPitchRate: 2,
+    bandBelow: 1.2,
+    bandAbove: 1,
+  }),
+  relaxed: Object.freeze({
+    distance: CAMERA.distance,
+    followXZ: CAMERA.followXZ,
+    followYUp: CAMERA.followYUp,
+    followYDown: CAMERA.followYDown,
+    autoYawDelay: CAMERA.autoYawDelay,
+    autoYawRate: CAMERA.autoYawRate,
+    autoYawMax: CAMERA.autoYawMax,
+    autoPitchRate: CAMERA.autoPitchRate,
+    bandBelow: CAMERA.bandBelow,
+    bandAbove: CAMERA.bandAbove,
+  }),
+});
+export const DEFAULT_CAMERA_STYLE = 'close';
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -29,7 +64,8 @@ export class FollowCamera {
   constructor(camera, { collidables = [], settings = {} } = {}) {
     this.camera = camera;
     this.collidables = collidables;
-    this.c = { ...CAMERA, ...settings };
+    this.style = settings.style in CAMERA_STYLES ? settings.style : DEFAULT_CAMERA_STYLE;
+    this.c = { ...CAMERA, ...CAMERA_STYLES[this.style], ...settings };
     this._yaw = 0;
     this.pitch = this.c.defaultPitch;
     this.distance = this.c.distance; // current (after collision)
@@ -68,6 +104,12 @@ export class FollowCamera {
     if (followXZ > 0) this.c.followXZ = followXZ;
   }
 
+  // Switch between the named feels in CAMERA_STYLES. Unknown names fall back to the default.
+  setStyle(name) {
+    this.style = name in CAMERA_STYLES ? name : DEFAULT_CAMERA_STYLE;
+    Object.assign(this.c, CAMERA_STYLES[this.style]);
+  }
+
   // Short screen shake, e.g. on ground pound.
   shake(magnitude = 0.25, time = 0.25) {
     this.shakeMag = Math.max(this.shakeMag, magnitude);
@@ -97,9 +139,17 @@ export class FollowCamera {
         const heading = Math.atan2(-this.velocity.x, -this.velocity.z); // yaw that puts the camera behind travel
         const diff = wrap(heading - this._yaw);
         if (Math.abs(diff) < Math.PI * 0.75) {
-          this.yaw = this._yaw + diff * Math.min(1, c.autoYawRate * dt * (sp / 7.5) * Math.abs(Math.sin(diff)));
+          const pace = sp / 7.5;
+          if (c.autoYawMax > 0) {
+            // Close: chase the heading proportionally (small offsets close fast too), capped so
+            // holding a sideways key curves gently instead of spinning.
+            const max = c.autoYawMax * dt * Math.min(1, pace);
+            this.yaw = this._yaw + THREE.MathUtils.clamp(diff * Math.min(1, c.autoYawRate * dt * pace), -max, max);
+          } else {
+            this.yaw = this._yaw + diff * Math.min(1, c.autoYawRate * dt * pace * Math.abs(Math.sin(diff)));
+          }
         }
-        this.pitch += (c.defaultPitch - this.pitch) * Math.min(1, dt * 0.6);
+        this.pitch += (c.defaultPitch - this.pitch) * Math.min(1, dt * c.autoPitchRate);
       }
     } else {
       this.yaw = this._yaw + c.menuOrbit * dt;
@@ -114,7 +164,7 @@ export class FollowCamera {
     const ky = 1 - Math.exp(-(want.y > this.pivot.y ? c.followYUp : c.followYDown) * dt);
     this.pivot.y += (want.y - this.pivot.y) * ky;
     // Never let Pip leave a vertical band around the pivot.
-    this.pivot.y = THREE.MathUtils.clamp(this.pivot.y, want.y - 2.2, want.y + 1.6);
+    this.pivot.y = THREE.MathUtils.clamp(this.pivot.y, want.y - c.bandBelow, want.y + c.bandAbove);
 
     this._place(dt, false);
   }

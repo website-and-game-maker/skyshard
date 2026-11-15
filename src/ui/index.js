@@ -1,5 +1,5 @@
 import { injectStyles } from './styles.js';
-import { loadSettings, saveSettings, sanitizeSettings, formatTime, QUALITY_LEVELS } from './settings.js';
+import { loadSettings, saveSettings, sanitizeSettings, formatTime, QUALITY_LEVELS, CAMERA_STYLE_IDS } from './settings.js';
 import { CONTROLS, DEVICES, detectDevice } from './controls.js';
 import { createPadReader, focusableIn, moveFocus, adjustControl } from './nav.js';
 import { KINDS, kindById, MESSAGE_MAX } from '../feedback/report.js';
@@ -28,6 +28,7 @@ const HEART_SVG = '<svg viewBox="0 0 28 26" aria-hidden="true"><path d="M14 24.5
 const PAUSE_SVG = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="3" width="4.5" height="14" rx="1.5"/><rect x="11.5" y="3" width="4.5" height="14" rx="1.5"/></svg>';
 
 const QUALITY_LABELS = { low: 'Low (fastest)', medium: 'Medium', high: 'High (prettiest)' };
+const CAMERA_LABELS = { close: 'Close follow', relaxed: 'Relaxed (classic)' };
 
 /**
  * Builds every menu and the in-game HUD as a DOM overlay on `root`.
@@ -162,8 +163,8 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
     fields[key] = { input, read: (s) => (input.checked = !!s[key]) };
     return h('label', { class: 'ss-field', for: `ss-${key}` }, label, input);
   }
-  function select(key, label, options) {
-    const input = h('select', { id: `ss-${key}`, testid: `set-${key}` }, ...options.map((o) => h('option', { value: o }, QUALITY_LABELS[o] ?? o)));
+  function select(key, label, options, labels = {}) {
+    const input = h('select', { id: `ss-${key}`, testid: `set-${key}` }, ...options.map((o) => h('option', { value: o }, labels[o] ?? o)));
     input.addEventListener('change', () => update({ [key]: input.value }));
     fields[key] = { input, read: (s) => (input.value = s[key]) };
     return h('label', { class: 'ss-field', for: `ss-${key}` }, label, input);
@@ -180,9 +181,10 @@ export function createUI(root, handlers = {}, { storage = safeStorage(), env = g
         slider('master', 'Volume', 0, 1, 0.05),
         slider('music', 'Music', 0, 1, 0.05),
         slider('sfx', 'Effects', 0, 1, 0.05),
+        select('cameraStyle', 'Camera', CAMERA_STYLE_IDS, CAMERA_LABELS),
         slider('sensitivity', 'Camera speed', 0.2, 3, 0.1),
         checkbox('invertY', 'Invert camera Y'),
-        select('quality', 'Graphics', QUALITY_LEVELS),
+        select('quality', 'Graphics', QUALITY_LEVELS, QUALITY_LABELS),
         checkbox('showFps', 'Show FPS'),
       ),
       h('div', { class: 'ss-menu' }, button('Back', { primary: true, testid: 'settings-back', onclick: () => closeSettings() })),

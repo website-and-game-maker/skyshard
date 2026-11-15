@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { FollowCamera } from './FollowCamera.js';
+import { FollowCamera, CAMERA_STYLES, CAMERA } from './FollowCamera.js';
 
 const DT = 1 / 60;
 const make = (collidables = []) => new FollowCamera(new THREE.PerspectiveCamera(60, 1, 0.1, 500), { collidables });
@@ -126,5 +126,74 @@ describe('FollowCamera', () => {
     f.yaw = 1;
     f.snap(new THREE.Vector3());
     expect(f.yaw).toBeCloseTo(1);
+  });
+
+  it('defaults to the close style and can switch back to the original relaxed camera', () => {
+    const f = make();
+    expect(f.style).toBe('close');
+    expect(f.c.distance).toBe(CAMERA_STYLES.close.distance);
+    f.setStyle('relaxed');
+    expect(f.style).toBe('relaxed');
+    for (const k of Object.keys(CAMERA_STYLES.relaxed)) expect(f.c[k]).toBe(CAMERA[k]);
+    f.setStyle('nonsense');
+    expect(f.style).toBe('close');
+  });
+
+  // Run sideways from a camera that starts behind -Z travel, and measure how far yaw swung.
+  const swingAfter = (style, seconds) => {
+    const f = make();
+    f.setStyle(style);
+    const t = new THREE.Vector3();
+    f.snap(t, { yaw: 0 });
+    for (let i = 0; i < seconds * 60; i++) {
+      t.x += 7.5 * DT;
+      f.update(DT, t, look());
+    }
+    return Math.abs(f.yaw);
+  };
+
+  it('close camera swings behind a turn much sooner than the relaxed one', () => {
+    expect(swingAfter('close', 1.2)).toBeGreaterThan(swingAfter('relaxed', 1.2) + 0.5);
+    expect(swingAfter('close', 2.5)).toBeGreaterThan(Math.PI / 2 - 0.15); // fully behind
+  });
+
+  it('close camera closes a small heading offset (the relaxed one barely moves)', () => {
+    const run = (style) => {
+      const f = make();
+      f.setStyle(style);
+      const t = new THREE.Vector3();
+      f.snap(t, { yaw: 0.25 }); // slightly off from behind -Z travel
+      for (let i = 0; i < 60; i++) {
+        t.z -= 7.5 * DT;
+        f.update(DT, t, look());
+      }
+      return Math.abs(f.yaw);
+    };
+    expect(run('close')).toBeLessThan(0.05);
+    expect(run('relaxed')).toBeGreaterThan(0.15);
+  });
+
+  it('close camera keeps Pip near the middle of the frame while running and jumping', () => {
+    const lagAfter = (style) => {
+      const f = make();
+      f.setStyle(style);
+      const t = new THREE.Vector3();
+      f.snap(t, { yaw: 0 });
+      for (let i = 0; i < 20; i++) {
+        t.z -= 7.5 * DT;
+        t.y += 6 * DT; // rising out of a jump
+        f.update(DT, t, look());
+      }
+      return f.pivot.distanceTo(new THREE.Vector3(t.x, t.y + f.c.pivotHeight, t.z));
+    };
+    expect(lagAfter('close')).toBeLessThan(lagAfter('relaxed') * 0.6);
+  });
+
+  it('snap with a yaw puts the camera straight behind that heading', () => {
+    const f = make();
+    for (let i = 0; i < 300; i++) f.update(DT, new THREE.Vector3(), null); // menu orbit drifts yaw
+    f.snap(new THREE.Vector3(), { yaw: 0 });
+    expect(f.yaw).toBeCloseTo(0);
+    expect(f.camera.position.z).toBeGreaterThan(4);
   });
 });

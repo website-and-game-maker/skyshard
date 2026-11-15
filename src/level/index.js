@@ -299,6 +299,9 @@ export function createLevel({ scene, quality = 'high', layout = driftmeadow } = 
     killY: def.killY ?? -25,
     spawn: new THREE.Vector3(spawn.x, spawn.y, spawn.z),
     respawnPoint: new THREE.Vector3(spawn.x, spawn.y, spawn.z),
+    // The way the course runs from the start (camera yaw convention: 0 looks down -Z).
+    // Every level runs toward -Z; a level can override this with `spawnYaw`.
+    forwardYaw: Number.isFinite(def.spawnYaw) ? def.spawnYaw : 0,
     shardsTotal: shardList.length,
     shardsCollected: 0,
     shardsRequired: hasBoss ? 0 : Math.min(def.shardsRequired ?? shardList.length, shardList.length),
