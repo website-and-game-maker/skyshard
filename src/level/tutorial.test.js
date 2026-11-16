@@ -6,6 +6,7 @@ import { createLevel } from './index.js';
 import tutorial from './levels/tutorial.js';
 import { groundHeightAt } from './colliders.js';
 import { PlayerController } from '../player/PlayerController.js';
+import { TUNING } from '../player/tuning.js';
 
 const DT = 1 / 60;
 const byId = Object.fromEntries(tutorial.islands.map((i) => [i.id, i]));
@@ -112,9 +113,55 @@ describe('tutorial playthrough (real Pip physics)', () => {
     expect(sim.events.filter((e) => e.type === 'checkpoint').map((e) => e.index)).toEqual([1, 2]);
   });
 
-  it('the terrace ledge is out of single-jump reach', () => {
+  it('the terrace ledge needs a double jump but leaves plenty of slack', () => {
     const rise = byId.upper.y - byId.terrace.y;
-    expect(rise).toBeGreaterThan(12.6 ** 2 / (2 * 34)); // jumpSpeed^2 / 2g
+    const single = TUNING.jumpSpeed ** 2 / (2 * TUNING.gravity);
+    const double = single + TUNING.doubleJumpSpeed ** 2 / (2 * TUNING.gravity);
+    expect(rise).toBeGreaterThan(single + 0.2);
+    expect(rise).toBeLessThan(double * 0.65); // was 81% of the perfect-timing maximum
+  });
+
+  // A beginner releases the jump key early (which cuts the jump short) and mistimes the
+  // second press. The ledge must still be makeable with that kind of sloppy input.
+  it('the double-jump ledge forgives short presses and loose timing', () => {
+    const tryLedge = (hold1, gap, hold2) => {
+      const sim = makeSim();
+      const s = byId.terrace, u = byId.upper;
+      sim.pc.position.set(s.x, s.y + 0.05, s.z - s.radius + 1.6);
+      wait(sim, 0.3);
+      for (let k = 0; k < 60 * 3; k++) {
+        const t = k * DT;
+        const near = (a) => Math.abs(t - a) < DT / 2;
+        step(sim, { moveY: 1, jumpPressed: near(0.1) || near(0.1 + gap),
+          jumpReleased: near(0.1 + hold1) || near(0.1 + gap + hold2) });
+        const p = sim.pc.position;
+        if (sim.pc.grounded && Math.abs(p.y - u.y) < 0.3 && Math.hypot(p.x - u.x, p.z - u.z) < u.radius) return true;
+      }
+      return false;
+    };
+    expect(tryLedge(0.15, 0.25, 0.15), 'two short presses').toBe(true);
+    expect(tryLedge(0.1, 0.2, 9), 'tap, then hold').toBe(true);
+    for (const gap of [0.1, 0.3, 0.5]) expect(tryLedge(9, gap, 9), `held, second press after ${gap}s`).toBe(true);
+    expect(tryLedge(9, 0.3, 0.1), 'hold, then tap').toBe(true);
+  });
+
+  it('the dash gap is crossable with a jump and a dash, even with a short jump press', () => {
+    const tryGap = (hold, dashAt) => {
+      const sim = makeSim();
+      const u = byId.upper, d = byId.dashland;
+      sim.pc.position.set(u.x, u.y + 0.05, u.z);
+      wait(sim, 0.3);
+      for (let k = 0; k < 60 * 3; k++) {
+        const t = k * DT;
+        const near = (a) => Math.abs(t - a) < DT / 2;
+        step(sim, { moveY: 1, jumpPressed: near(0.6), jumpReleased: near(0.6 + hold), dashPressed: near(0.6 + dashAt) });
+        const p = sim.pc.position;
+        if (sim.pc.grounded && Math.abs(p.y - d.y) < 0.3 && Math.hypot(p.x - d.x, p.z - d.z) < d.radius) return true;
+      }
+      return false;
+    };
+    for (const dashAt of [0.25, 0.4, 0.55]) expect(tryGap(9, dashAt), `held jump, dash after ${dashAt}s`).toBe(true);
+    expect(tryGap(0.1, 0.3), 'tapped jump, then dash').toBe(true);
   });
 
   it('the gap past the rune cannot be jumped before the bridge rises', () => {
